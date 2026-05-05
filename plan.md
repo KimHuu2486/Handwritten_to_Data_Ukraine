@@ -20,7 +20,7 @@
 | **M2 (Vision)** | Nghiên cứu *RT-DETR* và kiến trúc *Document Layout Analysis*. | Train baseline YOLO/Faster R-CNN cắt box. |
 | **M3 (OCR)** | Đọc paper *TrOCR* và kỹ thuật nhận dạng chữ Cyrillic. | Viết Unit Test cho `score()` (TDD). Train baseline OCR cho ảnh crop. |
 | **M4 (VLM)** | Đọc Docs của *HuggingFace* về LoRA/QoRA cho Qwen3-VL. | Thiết lập môi trường train VLM, chạy thử luồng infer rỗng. |
-| **M5 (MLOps)** | Đọc Docs Kaggle về giới hạn 9h GPU và RAM optimization. | Code `interfaces.py` định nghĩa đầu vào/ra. Viết script ghép file submit. |
+| **M5 (MLOps)** | Đọc Docs Kaggle và RAM optimization. | Code `interfaces.py` định nghĩa đầu vào/ra. Viết script ghép file submit. |
 
 ---
 
