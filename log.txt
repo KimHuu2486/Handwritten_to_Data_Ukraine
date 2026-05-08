@@ -1,0 +1,222 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Phiên bản transformers hiện tại: 5.8.0.dev0
+⚠️ CẢNH BÁO: Phiên bản transformers của bạn quá cũ! Bạn cần chạy lệnh `!pip install -q git+https://github.com/huggingface/transformers` trước khi chạy code này.
+🚀 Bắt đầu Zero-shot Baseline với Qwen 3 VL (Kaggle Model)...
+Loading model từ: /kaggle/input/models/qwen-lm/qwen-3-vl/transformers/8b-instruct/1
+Loading weights: 100%
+ 750/750 [01:48<00:00, 16.02it/s]
+Đọc metadata từ /kaggle/input/datasets/quii29/rukopys-dataset/test/metadata.jsonl
+Tìm thấy 386 ảnh test.
+Đang phân tích:   0%|          | 0/386 [00:00<?, ?it/s][transformers] The following generation flags are not valid and may be ignored: ['temperature']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Đang phân tích:   0%|          | 0/386 [00:21<?, ?it/s]
+---------------------------------------------------------------------------
+OutOfMemoryError                          Traceback (most recent call last)
+/tmp/ipykernel_57/2648240710.py in <cell line: 0>()
+    180 
+    181 if __name__ == "__main__":
+--> 182     main()
+
+/tmp/ipykernel_57/2648240710.py in main()
+    147 
+    148         with torch.no_grad():
+--> 149             generated_ids = model.generate(
+    150                 **inputs,
+    151                 max_new_tokens=1024,
+
+/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py in decorate_context(*args, **kwargs)
+    122         # pyrefly: ignore [bad-context-manager]
+    123         with ctx_factory():
+--> 124             return func(*args, **kwargs)
+    125 
+    126     return decorate_context
+
+/usr/local/lib/python3.12/dist-packages/transformers/generation/utils.py in generate(self, inputs, generation_config, logits_processor, stopping_criteria, prefix_allowed_tokens_fn, synced_gpus, assistant_model, streamer, negative_prompt_ids, negative_prompt_attention_mask, custom_generate, **kwargs)
+   2559 
+   2560         # 9. Call generation mode
+-> 2561         result = decoding_method(
+   2562             self,
+   2563             input_ids,
+
+/usr/local/lib/python3.12/dist-packages/transformers/generation/utils.py in _sample(self, input_ids, logits_processor, stopping_criteria, generation_config, synced_gpus, streamer, **model_kwargs)
+   2752 
+   2753         prefill_consumed = False
+-> 2754         outputs = self._prefill(
+   2755             input_ids,
+   2756             generation_config,
+
+/usr/local/lib/python3.12/dist-packages/transformers/generation/utils.py in _prefill(self, input_ids, generation_config, model_kwargs, is_first_iteration)
+   3798                 **model_kwargs,
+   3799             )
+-> 3800             return self(**model_inputs, return_dict=True)
+   3801 
+   3802         # Chunked prefill (for very large contexts)
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _wrapped_call_impl(self, *args, **kwargs)
+   1774             return self._compiled_call_impl(*args, **kwargs)  # type: ignore[misc]
+   1775         else:
+-> 1776             return self._call_impl(*args, **kwargs)
+   1777 
+   1778     # torchrec tests the code consistency with the following code
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _call_impl(self, *args, **kwargs)
+   1785                 or _global_backward_pre_hooks or _global_backward_hooks
+   1786                 or _global_forward_hooks or _global_forward_pre_hooks):
+-> 1787             return forward_call(*args, **kwargs)
+   1788 
+   1789         result = None
+
+/usr/local/lib/python3.12/dist-packages/accelerate/hooks.py in new_forward(module, *args, **kwargs)
+    173                 output = module._old_forward(*args, **kwargs)
+    174         else:
+--> 175             output = module._old_forward(*args, **kwargs)
+    176         return module._hf_hook.post_forward(module, output)
+    177 
+
+/usr/local/lib/python3.12/dist-packages/transformers/utils/generic.py in wrapper(self, *args, **kwargs)
+    898         if return_dict_passed is not None:
+    899             return_dict = return_dict_passed
+--> 900         output = func(self, *args, **kwargs)
+    901         if not return_dict and not isinstance(output, tuple):
+    902             output = output.to_tuple()
+
+/usr/local/lib/python3.12/dist-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py in forward(self, input_ids, attention_mask, position_ids, past_key_values, inputs_embeds, labels, pixel_values, pixel_values_videos, image_grid_thw, video_grid_thw, mm_token_type_ids, logits_to_keep, **kwargs)
+   1507         """
+   1508 
+-> 1509         outputs = self.model(
+   1510             input_ids=input_ids,
+   1511             pixel_values=pixel_values,
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _wrapped_call_impl(self, *args, **kwargs)
+   1774             return self._compiled_call_impl(*args, **kwargs)  # type: ignore[misc]
+   1775         else:
+-> 1776             return self._call_impl(*args, **kwargs)
+   1777 
+   1778     # torchrec tests the code consistency with the following code
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _call_impl(self, *args, **kwargs)
+   1785                 or _global_backward_pre_hooks or _global_backward_hooks
+   1786                 or _global_forward_hooks or _global_forward_pre_hooks):
+-> 1787             return forward_call(*args, **kwargs)
+   1788 
+   1789         result = None
+
+/usr/local/lib/python3.12/dist-packages/transformers/utils/generic.py in wrapper(self, *args, **kwargs)
+    898         if return_dict_passed is not None:
+    899             return_dict = return_dict_passed
+--> 900         output = func(self, *args, **kwargs)
+    901         if not return_dict and not isinstance(output, tuple):
+    902             output = output.to_tuple()
+
+/usr/local/lib/python3.12/dist-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py in forward(self, input_ids, attention_mask, position_ids, past_key_values, inputs_embeds, pixel_values, pixel_values_videos, image_grid_thw, video_grid_thw, mm_token_type_ids, **kwargs)
+   1346             )
+   1347 
+-> 1348         outputs = self.language_model(
+   1349             input_ids=None,
+   1350             position_ids=position_ids,
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _wrapped_call_impl(self, *args, **kwargs)
+   1774             return self._compiled_call_impl(*args, **kwargs)  # type: ignore[misc]
+   1775         else:
+-> 1776             return self._call_impl(*args, **kwargs)
+   1777 
+   1778     # torchrec tests the code consistency with the following code
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _call_impl(self, *args, **kwargs)
+   1785                 or _global_backward_pre_hooks or _global_backward_hooks
+   1786                 or _global_forward_hooks or _global_forward_pre_hooks):
+-> 1787             return forward_call(*args, **kwargs)
+   1788 
+   1789         result = None
+
+/usr/local/lib/python3.12/dist-packages/transformers/utils/generic.py in wrapper(self, *args, **kwargs)
+    974                     output = func(self, *args, **kwargs)
+    975             else:
+--> 976                 output = func(self, *args, **kwargs)
+    977         # Restore original config value
+    978         finally:
+
+/usr/local/lib/python3.12/dist-packages/transformers/utils/output_capturing.py in wrapper(self, *args, **kwargs)
+    246             # Run the forward
+    247             try:
+--> 248                 outputs = func(self, *args, **kwargs)
+    249             # Reset the states
+    250             finally:
+
+/usr/local/lib/python3.12/dist-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py in forward(self, input_ids, attention_mask, position_ids, past_key_values, inputs_embeds, use_cache, visual_pos_masks, deepstack_visual_embeds, **kwargs)
+    914         # decoder layers
+    915         for layer_idx, decoder_layer in enumerate(self.layers):
+--> 916             layer_outputs = decoder_layer(
+    917                 hidden_states,
+    918                 attention_mask=attention_mask,
+
+/usr/local/lib/python3.12/dist-packages/transformers/modeling_layers.py in __call__(self, *args, **kwargs)
+     91 
+     92             return self._gradient_checkpointing_func(partial(super().__call__, **kwargs), *args)
+---> 93         return super().__call__(*args, **kwargs)
+     94 
+     95 
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _wrapped_call_impl(self, *args, **kwargs)
+   1774             return self._compiled_call_impl(*args, **kwargs)  # type: ignore[misc]
+   1775         else:
+-> 1776             return self._call_impl(*args, **kwargs)
+   1777 
+   1778     # torchrec tests the code consistency with the following code
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _call_impl(self, *args, **kwargs)
+   1785                 or _global_backward_pre_hooks or _global_backward_hooks
+   1786                 or _global_forward_hooks or _global_forward_pre_hooks):
+-> 1787             return forward_call(*args, **kwargs)
+   1788 
+   1789         result = None
+
+/usr/local/lib/python3.12/dist-packages/accelerate/hooks.py in new_forward(module, *args, **kwargs)
+    173                 output = module._old_forward(*args, **kwargs)
+    174         else:
+--> 175             output = module._old_forward(*args, **kwargs)
+    176         return module._hf_hook.post_forward(module, output)
+    177 
+
+/usr/local/lib/python3.12/dist-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py in forward(self, hidden_states, position_embeddings, attention_mask, position_ids, past_key_values, use_cache, **kwargs)
+    546         hidden_states = self.input_layernorm(hidden_states)
+    547         # Self Attention
+--> 548         hidden_states, _ = self.self_attn(
+    549             hidden_states=hidden_states,
+    550             attention_mask=attention_mask,
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _wrapped_call_impl(self, *args, **kwargs)
+   1774             return self._compiled_call_impl(*args, **kwargs)  # type: ignore[misc]
+   1775         else:
+-> 1776             return self._call_impl(*args, **kwargs)
+   1777 
+   1778     # torchrec tests the code consistency with the following code
+
+/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py in _call_impl(self, *args, **kwargs)
+   1785                 or _global_backward_pre_hooks or _global_backward_hooks
+   1786                 or _global_forward_hooks or _global_forward_pre_hooks):
+-> 1787             return forward_call(*args, **kwargs)
+   1788 
+   1789         result = None
+
+/usr/local/lib/python3.12/dist-packages/accelerate/hooks.py in new_forward(module, *args, **kwargs)
+    173                 output = module._old_forward(*args, **kwargs)
+    174         else:
+--> 175             output = module._old_forward(*args, **kwargs)
+    176         return module._hf_hook.post_forward(module, output)
+    177 
+
+/usr/local/lib/python3.12/dist-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py in forward(self, hidden_states, position_embeddings, attention_mask, past_key_values, **kwargs)
+    490         )
+    491 
+--> 492         attn_output, attn_weights = attention_interface(
+    493             self,
+    494             query_states,
+
+/usr/local/lib/python3.12/dist-packages/transformers/integrations/sdpa_attention.py in sdpa_attention_forward(module, query, key, value, attention_mask, dropout, scaling, is_causal, **kwargs)
+     90             attention_mask = torch.logical_not(attention_mask.bool()).to(query.device)
+     91 
+---> 92     attn_output = torch.nn.functional.scaled_dot_product_attention(
+     93         query,
+     94         key,
+
+OutOfMemoryError: CUDA out of memory. Tried to allocate 7.75 GiB. GPU 0 has a total capacity of 14.56 GiB of which 3.14 GiB is free. Including non-PyTorch memory, this process has 11.42 GiB memory in use. Of the allocated memory 10.87 GiB is allocated by PyTorch, and 427.16 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
