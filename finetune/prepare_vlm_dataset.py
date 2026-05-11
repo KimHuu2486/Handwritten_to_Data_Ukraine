@@ -21,20 +21,7 @@ TRAIN_SPLIT_RATIO = 0.8
 RANDOM_SEED = 42
 
 # Phải khớp hoàn toàn với Zero-shot baseline để đảm bảo Model học đúng format
-ZERO_SHOT_PROMPT = """You are a document understanding model for Ukrainian handwritten text.
-Analyze this image and extract all text regions LINE BY LINE. 
-It is critical that EACH INDIVIDUAL LINE of text is returned as a SEPARATE region. Do not group multiple lines into a single bounding box.
-Transcribe all legible text exactly as it appears, including crossed-out or strikethrough text.
-
-For each line region, output a JSON object with:
-- "bbox": [x1, y1, x2, y2] relative coordinates from 0 to 1000 (where 0 is top/left and 1000 is bottom/right)
-- "type": one of "handwritten", "printed", "formula", "table", "annotation", "image", "graph"
-- "text": the transcribed text of that line (empty string for image/graph types)
-
-Output format: a JSON list of region objects.
-Important: For tables, use pipe-separated values (|). For formulas, use LaTeX or plain Unicode.
-Only output the JSON list, nothing else.
-"""
+ZERO_SHOT_PROMPT = """Extract all text regions from this Ukrainian document. For each region, output JSON with "bbox" [x1,y1,x2,y2] in 0-1000 coordinates, "type" (handwritten/printed/formula/annotation/table/image/graph), and "text" (exact transcription in original language). Output regions top-to-bottom. Only output JSON list."""
 
 def process_record(record):
     """Chuyển đổi 1 record metadata thành format Conversation của Qwen."""
@@ -70,7 +57,7 @@ def process_record(record):
                     {
                         "type": "image", 
                         "image": image_path,
-                        "max_pixels": 262144
+                        "max_pixels": 462560
                     },
                     {"type": "text", "text": ZERO_SHOT_PROMPT}
                 ]

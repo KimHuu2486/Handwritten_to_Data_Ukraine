@@ -136,6 +136,25 @@ OUTPUT_DIR = 'qwen3_vl_lora_output'
 # VD: '/kaggle/input/rukopys-checkpoint/checkpoint-123'
 RESUME_CHECKPOINT_DIR = ''
 
+class OOMRecoveryTrainer(Trainer):
+    def training_step(self, model, inputs, num_items_in_batch=None):
+        try:
+            import inspect
+            sig = inspect.signature(Trainer.training_step)
+            if 'num_items_in_batch' in sig.parameters:
+                return super().training_step(model, inputs, num_items_in_batch=num_items_in_batch)
+            else:
+                return super().training_step(model, inputs)
+        except torch.cuda.OutOfMemoryError:
+            import gc
+            print("\n🚨 [OOM WARNING] Hết VRAM tại một batch! Đang dọn dẹp và skip batch...", flush=True)
+            for p in model.parameters():
+                if p.grad is not None:
+                    del p.grad  # Xóa các gradient đang tính dở dang
+            torch.cuda.empty_cache()
+            gc.collect()
+            return torch.tensor(0.0, device=model.device)
+
 def main():
     print(f"Bắt đầu quá trình cấu hình Fine-tuning cho Qwen3-VL-8B")
     
@@ -176,9 +195,9 @@ def main():
     # 4. Cấu hình LoRA
     print("Đang áp dụng LoRA adapters...")
     lora_config = LoraConfig(
-        r=8,                 # Giảm Rank để cứu vớt VRAM lúc Backward
-        lora_alpha=16,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        r=16,                 # Tăng rank từ 8 lên 16
+        lora_alpha=32,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -205,6 +224,8 @@ def main():
             images=image_inputs,
             videos=video_inputs,
             padding=True,
+            truncation=True,
+            max_length=2048,
             return_tensors="pt"
         )
         
@@ -228,8 +249,8 @@ def main():
                 if match_idx != -1:
                     labels[i, :match_idx] = -100
                 else:
-                    # Rất hiếm khi xảy ra, nhưng nếu không tìm thấy thì cứ mask phần đầu
-                    labels[i, :len(label_list)//2] = -100
+                    # Nếu không tìm thấy marker, mask TOÀN BỘ để tránh loss bị nhiễu
+                    labels[i, :] = -100
         except Exception as e:
             print(f"Warning: Masking user prompt failed: {e}")
 
@@ -260,8 +281,8 @@ def main():
         use_liger_kernel=True               # Bật Liger Kernel để tối ưu OOM (giảm 50% VRAM ở Loss)
     )
     
-    # 7. Trainer Khởi Tạo (với Custom Callback)
-    trainer = Trainer(
+    # 7. Trainer Khởi Tạo (với Custom Callback và OOM Recovery)
+    trainer = OOMRecoveryTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],

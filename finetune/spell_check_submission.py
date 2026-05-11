@@ -18,7 +18,7 @@ Cách sử dụng local (test thử):
   - python spell_check_submission.py --input submission.csv --output submission_fixed.csv --local
 
 Yêu cầu:
-  - transformers, torch, pandas
+  - transformers, torch
   - GPU với >=2GB VRAM trống (hoặc dùng CPU với --cpu flag)
 """
 
@@ -123,14 +123,15 @@ def load_spell_check_model(model_path, device="cuda:0", use_cpu=False):
     
     # Kiểm tra VRAM
     if torch.cuda.is_available() and not use_cpu:
-        allocated = torch.cuda.memory_allocated() / 1024**3
-        print(f"   VRAM sử dụng: {allocated:.1f} GB", flush=True)
+        dev_idx = torch.cuda.current_device() if device == "cpu" else int(device.split(":")[-1]) if ":" in device else 0
+        allocated = torch.cuda.memory_allocated(dev_idx) / 1024**3
+        print(f"   VRAM sử dụng (GPU{dev_idx}): {allocated:.1f} GB", flush=True)
     
     print("✅ Model spell-check đã sẵn sàng!", flush=True)
     return model, tokenizer
 
 
-def spell_check_text(text, model, tokenizer, max_new_tokens=2048):
+def spell_check_text(text, model, tokenizer):
     """
     Sửa lỗi chính tả cho đoạn text OCR.
     
@@ -138,7 +139,6 @@ def spell_check_text(text, model, tokenizer, max_new_tokens=2048):
         text: Đoạn text OCR cần sửa
         model: LLM model
         tokenizer: Tokenizer tương ứng
-        max_new_tokens: Số token tối đa cho output
     
     Returns:
         Text đã sửa chính tả
@@ -154,14 +154,21 @@ def spell_check_text(text, model, tokenizer, max_new_tokens=2048):
     )
     inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
     
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=0.1,
-            do_sample=False,
-            repetition_penalty=1.1,
-        )
+    # Giới hạn output dựa trên độ dài input (tránh hallucinate dài)
+    input_token_len = inputs.input_ids.shape[1]
+    max_new_tokens = min(2048, max(256, input_token_len * 2))
+    
+    try:
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                repetition_penalty=1.1,
+            )
+    except Exception as e:
+        print(f"⚠️ Lỗi generate: {e}", flush=True)
+        return text  # Trả về text gốc nếu lỗi
     
     # Decode chỉ phần generated (bỏ phần prompt)
     result = tokenizer.decode(
@@ -259,17 +266,9 @@ def process_regions(regions_json_str, model, tokenizer):
                 region["text"] = corrected_line
                 fixed_count += 1
     else:
-        # === Fallback: Spell-check từng region riêng lẻ ===
-        for i, region in enumerate(regions):
-            original = texts[i]
-            if len(original.strip()) < 5:
-                continue
-            
-            corrected = spell_check_text(original, model, tokenizer)
-            corrected, was_fixed = safe_apply_correction(original, corrected)
-            if was_fixed and corrected != original:
-                region["text"] = corrected
-                fixed_count += 1
+        # Block-level spell-check thất bại (số dòng không khớp) → giữ nguyên
+        # Không fallback từng region vì sẽ gọi LLM N lần (rất chậm)
+        pass
     
     return json.dumps(regions, ensure_ascii=False), fixed_count
 
@@ -353,6 +352,7 @@ def main():
     
     total_fixed = 0
     total_regions = 0
+    processed_count = 0  # Chỉ đếm ảnh thực sự xử lý (có regions)
     start_time = time.time()
     
     for idx, row in enumerate(rows):
@@ -369,6 +369,8 @@ def main():
         if num_regions == 0:
             continue
         
+        processed_count += 1
+        
         # Spell-check
         corrected_str, fixed_count = process_regions(
             regions_str, model, tokenizer
@@ -379,8 +381,9 @@ def main():
         # Progress log (mỗi 10 ảnh hoặc ảnh cuối)
         if (idx + 1) % 10 == 0 or idx == len(rows) - 1:
             elapsed = time.time() - start_time
-            speed = elapsed / (idx + 1)
-            eta = speed * (len(rows) - idx - 1)
+            speed = elapsed / max(processed_count, 1)
+            remaining = len(rows) - idx - 1
+            eta = speed * remaining * (processed_count / max(idx + 1, 1))  # Tỷ lệ ảnh thực sự xử lý
             print(
                 f"  [{idx+1}/{len(rows)}] "
                 f"Đã sửa: {total_fixed} regions | "

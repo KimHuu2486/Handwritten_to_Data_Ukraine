@@ -110,8 +110,8 @@ def find_lora_weights():
 # LORA_WEIGHTS_PATH sẽ được set trong main() để tránh crash khi import module
 LORA_WEIGHTS_PATH = None
 
-# Giới hạn pixel đầu vào để tránh OOM trên T4 và giảm thời gian inference (~1024x768)
-MAX_PIXELS = 786432
+# Giới hạn pixel đầu vào để tránh OOM trên T4 và giảm thời gian inference (~1024x768 -> ~680x680)
+MAX_PIXELS = 462560
 
 # CHẾ ĐỘ TEST NHANH: Nếu True, chỉ chạy 1 ảnh trên mỗi GPU rồi xuất kết quả
 TEST_MODE = False
@@ -120,20 +120,7 @@ TEST_MODE = False
 # PROMPT - Phải khớp CHÍNH XÁC với prompt dùng lúc fine-tune
 # (xem prepare_vlm_dataset.py)
 # ==========================================
-INFERENCE_PROMPT = """You are a document understanding model for Ukrainian handwritten text.
-Analyze this image and extract all text regions LINE BY LINE. 
-It is critical that EACH INDIVIDUAL LINE of text is returned as a SEPARATE region. Do not group multiple lines into a single bounding box.
-Transcribe all legible text exactly as it appears, including crossed-out or strikethrough text.
-
-For each line region, output a JSON object with:
-- "bbox": [x1, y1, x2, y2] relative coordinates from 0 to 1000 (where 0 is top/left and 1000 is bottom/right)
-- "type": one of "handwritten", "printed", "formula", "table", "annotation", "image", "graph"
-- "text": the transcribed text of that line (empty string for image/graph types)
-
-Output format: a JSON list of region objects.
-Important: For tables, use pipe-separated values (|). For formulas, use LaTeX or plain Unicode.
-Only output the JSON list, nothing else.
-"""
+INFERENCE_PROMPT = """Extract all text regions from this Ukrainian document. For each region, output JSON with "bbox" [x1,y1,x2,y2] in 0-1000 coordinates, "type" (handwritten/printed/formula/annotation/table/image/graph), and "text" (exact transcription in original language). Output regions top-to-bottom. Only output JSON list."""
 
 
 def extract_json_from_response(text):
@@ -335,11 +322,10 @@ def worker_process(gpu_id, image_filenames, output_csv):
         low_cpu_mem_usage=True
     )
     
-    # Load LoRA adapter lên trên base model rồi merge để tăng tốc inference ~10-15%
+    # Load LoRA adapter lên trên base model (Không merge trên 4-bit để tránh crash)
     print(f"🔧 [Worker {gpu_id}] Đang load LoRA weights từ {LORA_WEIGHTS_PATH}...")
     model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_PATH)
-    model = model.merge_and_unload()
-    print(f"🔧 [Worker {gpu_id}] Đã merge LoRA → base model thành công.")
+    print(f"🔧 [Worker {gpu_id}] Đã nạp LoRA weights thành công.")
     
     processor = AutoProcessor.from_pretrained(MODEL_PATH)
     
