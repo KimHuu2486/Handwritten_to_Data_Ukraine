@@ -1,13 +1,54 @@
 # ==============================================================================
-# Zero-shot Baseline - RUKOPYS Kaggle Competition
-# Model: Qwen 3 VL (8b-instruct)
+# Fine-tuned Inference - RUKOPYS Kaggle Competition
+# Model: Qwen 3 VL (8b-instruct) + LoRA Adapter
 # Method: Multi-processing on multiple GPUs
 #
 # Submission format (from official evaluation notebook):
 #   CSV with columns: image, regions
 #   regions = JSON list of {"bbox": [x1,y1,x2,y2], "type": "...", "text": "..."}
 #   bbox = absolute pixel coordinates, top-left origin
+#
+# HƯỚNG DẪN CHẠY TRÊN KAGGLE:
+#   1. Tạo notebook mới trên Kaggle
+#   2. Add Input:
+#      - Model: qwen-lm/qwen-3-vl (8b-instruct)
+#      - Dataset: quii29/rukopys-dataset
+#      - Output notebook fine-tune: trankimhuu/finetune-vlm-lora
+#   3. Bật GPU T4 x2, Internet ON
+#   4. Paste toàn bộ script này vào 1 cell và chạy
 # ==============================================================================
+
+# ==========================================
+# CÀI ĐẶT THƯ VIỆN CẦN THIẾT
+# ==========================================
+import subprocess, sys
+
+def install_packages():
+    """Cài đặt các thư viện cần thiết trên Kaggle."""
+    packages = [
+        'peft',
+        'bitsandbytes',
+        'qwen-vl-utils',
+    ]
+    print("📦 Đang cài đặt thư viện cần thiết...", flush=True)
+    for pkg in packages:
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', '-q', pkg],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        print(f"  ✅ {pkg}", flush=True)
+    
+    # Cài transformers nightly (cần cho Qwen3-VL)
+    print("  ⏳ transformers (nightly)...", flush=True)
+    subprocess.check_call(
+        [sys.executable, '-m', 'pip', 'install', '-q',
+         'git+https://github.com/huggingface/transformers.git'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    print("  ✅ transformers (nightly)", flush=True)
+    print("📦 Hoàn tất cài đặt!\n", flush=True)
+
+install_packages()
 
 import os
 import shutil
@@ -23,6 +64,9 @@ from PIL import Image
 import multiprocessing as mp
 import math
 
+# Tắt giới hạn DecompressionBomb cho ảnh lớn (94MP+ trong dataset)
+Image.MAX_IMAGE_PIXELS = None
+
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN KAGGLE
 # ==========================================
@@ -35,8 +79,36 @@ OUTPUT_CSV_PATH = 'submission.csv'
 MODEL_PATH = '/kaggle/input/models/qwen-lm/qwen-3-vl/transformers/8b-instruct/1'
 
 # Đường dẫn đến thư mục chứa trọng số LoRA sau khi đã train xong
-# Bạn có thể trỏ tới /kaggle/working/... hoặc một Dataset bạn upload lại
-LORA_WEIGHTS_PATH = '/kaggle/working/qwen3_vl_lora_output/qwen_lora_final'
+# Script sẽ tự động tìm LoRA weights theo thứ tự ưu tiên:
+#   1. /kaggle/working/... (nếu chạy cùng notebook fine-tune)
+#   2. /kaggle/input/finetune-vlm-lora/... (nếu mount output fine-tune như Input)
+LORA_CANDIDATES = [
+    '/kaggle/input/datasets/trankimhuu/qwen-lora/qwen3_vl_lora_output/qwen_lora_final',
+]
+
+def find_lora_weights():
+    """Tự động tìm đường dẫn LoRA weights từ các vị trí có thể."""
+    for path in LORA_CANDIDATES:
+        if os.path.exists(path) and os.path.isdir(path):
+            # Kiểm tra có file adapter_config.json (dấu hiệu của LoRA adapter)
+            if os.path.exists(os.path.join(path, 'adapter_config.json')):
+                print(f"✅ Tìm thấy LoRA weights tại: {path}", flush=True)
+                return path
+    
+    # Fallback: tìm bất kỳ adapter_config.json nào trong /kaggle/input/
+    print("⚠️ Không tìm thấy LoRA weights ở các vị trí mặc định. Đang quét /kaggle/input/...", flush=True)
+    for root, dirs, files in os.walk('/kaggle/input'):
+        if 'adapter_config.json' in files:
+            print(f"✅ Tìm thấy LoRA weights tại: {root}", flush=True)
+            return root
+    
+    raise FileNotFoundError(
+        "❌ Không tìm thấy LoRA weights! Hãy mount output notebook fine-tune như Input.\n"
+        "   Vào Kaggle notebook → Add Input → Notebook Output → chọn 'finetune-vlm-lora'"
+    )
+
+# LORA_WEIGHTS_PATH sẽ được set trong main() để tránh crash khi import module
+LORA_WEIGHTS_PATH = None
 
 # Giới hạn pixel đầu vào để tránh OOM trên T4 và giảm thời gian inference (~1024x768)
 MAX_PIXELS = 786432
@@ -45,9 +117,10 @@ MAX_PIXELS = 786432
 TEST_MODE = False
 
 # ==========================================
-# PROMPT ZERO-SHOT
+# PROMPT - Phải khớp CHÍNH XÁC với prompt dùng lúc fine-tune
+# (xem prepare_vlm_dataset.py)
 # ==========================================
-ZERO_SHOT_PROMPT = """You are a document understanding model for Ukrainian handwritten text.
+INFERENCE_PROMPT = """You are a document understanding model for Ukrainian handwritten text.
 Analyze this image and extract all text regions LINE BY LINE. 
 It is critical that EACH INDIVIDUAL LINE of text is returned as a SEPARATE region. Do not group multiple lines into a single bounding box.
 Transcribe all legible text exactly as it appears, including crossed-out or strikethrough text.
@@ -85,7 +158,10 @@ def extract_json_from_response(text):
                     return json.dumps(parsed[key], ensure_ascii=False)
     except json.JSONDecodeError:
         pass
-        
+    
+    # Greedy match: lấy từ [ đầu tiên đến ] cuối cùng trong toàn bộ text.
+    # Điều này cố ý để bắt được JSON array hoàn chỉnh ngay cả khi có nested arrays.
+    # Kết quả sẽ được validate bằng json.loads() bên dưới.
     match = re.search(r'\[.*\]', text, re.DOTALL)
     if match:
         try:
@@ -174,42 +250,21 @@ def rescale_bboxes_to_original(json_str, img_path):
 def run_inference_single_image(model, processor, img_path, device):
     if not os.path.exists(img_path):
         return "[]", f"⚠️ Không tìm thấy ảnh {img_path}"
-        
-    # Mô hình đã được Fine-tune nên KHÔNG CẦN few-shot nữa!
-    # Điều này giúp tiết kiệm 90% VRAM và tốc độ Inference nhanh hơn rất nhiều.
-    few_shots = []
 
-    messages = []
-    
-    # Add few-shot examples
-    for fs in few_shots:
-        if os.path.exists(fs["img"]):
-            messages.append({
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": fs["img"], "max_pixels": MAX_PIXELS},
-                    {"type": "text", "text": ZERO_SHOT_PROMPT}
-                ]
-            })
-            messages.append({
-                "role": "assistant",
-                "content": [
-                    {"type": "text", "text": fs["json"]}
-                ]
-            })
-
-    # Add the actual test image
-    messages.append({
-        "role": "user",
-        "content": [
-            {
-                "type": "image", 
-                "image": img_path,
-                "max_pixels": MAX_PIXELS
-            },
-            {"type": "text", "text": ZERO_SHOT_PROMPT}
-        ]
-    })
+    # Mô hình đã được Fine-tune → chỉ cần 1 message duy nhất (không cần few-shot)
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image", 
+                    "image": img_path,
+                    "max_pixels": MAX_PIXELS
+                },
+                {"type": "text", "text": INFERENCE_PROMPT}
+            ]
+        }
+    ]
     
     text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, video_inputs = process_vision_info(messages)
@@ -224,7 +279,7 @@ def run_inference_single_image(model, processor, img_path, device):
     
     inputs = inputs.to(device)
     
-    with torch.no_grad():
+    with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
         generated_ids = model.generate(
             **inputs,
             max_new_tokens=4096,
@@ -241,6 +296,15 @@ def run_inference_single_image(model, processor, img_path, device):
     
     raw_json_str = extract_json_from_response(output_text)
     final_json_str = rescale_bboxes_to_original(raw_json_str, img_path)
+    
+    # Sort regions theo y1 (từ trên xuống dưới) để đảm bảo thứ tự nhất quán
+    try:
+        regions = json.loads(final_json_str)
+        if regions:
+            regions.sort(key=lambda r: r.get('bbox', [0, 0, 0, 0])[1])
+            final_json_str = json.dumps(regions, ensure_ascii=False)
+    except (json.JSONDecodeError, TypeError):
+        pass
     
     torch.cuda.empty_cache()
     
@@ -271,21 +335,29 @@ def worker_process(gpu_id, image_filenames, output_csv):
         low_cpu_mem_usage=True
     )
     
-    # Load LoRA adapter lên trên base model
+    # Load LoRA adapter lên trên base model rồi merge để tăng tốc inference ~10-15%
     print(f"🔧 [Worker {gpu_id}] Đang load LoRA weights từ {LORA_WEIGHTS_PATH}...")
     model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS_PATH)
+    model = model.merge_and_unload()
+    print(f"🔧 [Worker {gpu_id}] Đã merge LoRA → base model thành công.")
     
     processor = AutoProcessor.from_pretrained(MODEL_PATH)
     
     already_done = set()
     results = []
     
-    # Kiểm tra checkpoint riêng của tiến trình này
+    # Kiểm tra checkpoint riêng của tiến trình này (với validation + dedup)
     if os.path.exists(output_csv):
-        partial_df = pd.read_csv(output_csv, encoding='utf-8')
-        already_done = set(partial_df['image'].tolist())
-        results = partial_df.to_dict('records')
-        print(f"♻️ [Worker {gpu_id}] Tìm thấy checkpoint: đã xử lý {len(already_done)} ảnh.")
+        try:
+            partial_df = pd.read_csv(output_csv, encoding='utf-8')
+            partial_df = partial_df.drop_duplicates(subset=['image'], keep='last')
+            already_done = set(partial_df['image'].tolist())
+            results = partial_df.to_dict('records')
+            print(f"♻️ [Worker {gpu_id}] Tìm thấy checkpoint: đã xử lý {len(already_done)} ảnh.")
+        except Exception as e:
+            print(f"⚠️ [Worker {gpu_id}] Checkpoint CSV bị lỗi, bỏ qua và chạy lại: {e}")
+            already_done = set()
+            results = []
         
     for img_name in tqdm(image_filenames, desc=f"GPU {gpu_id}", position=gpu_id):
         if img_name in already_done:
@@ -305,16 +377,25 @@ def worker_process(gpu_id, image_filenames, output_csv):
             "regions": final_json_str
         })
         
-        # Lưu checkpoint thường xuyên
+        # Lưu checkpoint thường xuyên (atomic write để tránh corrupt)
         if len(results) % 5 == 0:
-            pd.DataFrame(results).to_csv(output_csv, index=False, encoding='utf-8')
+            tmp_csv = output_csv + '.tmp'
+            pd.DataFrame(results).to_csv(tmp_csv, index=False, encoding='utf-8')
+            os.replace(tmp_csv, output_csv)
             
-    # Lưu toàn bộ sau khi xong
-    pd.DataFrame(results).to_csv(output_csv, index=False, encoding='utf-8')
+    # Lưu toàn bộ sau khi xong (atomic write)
+    tmp_csv = output_csv + '.tmp'
+    pd.DataFrame(results).to_csv(tmp_csv, index=False, encoding='utf-8')
+    os.replace(tmp_csv, output_csv)
     print(f"✅ [Worker {gpu_id}] Đã hoàn thành.")
 
 
 def main():
+    global LORA_WEIGHTS_PATH
+    
+    # Tìm LoRA weights (thực hiện ở đây thay vì module-level để tránh crash khi import)
+    LORA_WEIGHTS_PATH = find_lora_weights()
+    
     # Sử dụng start_method 'fork' để chạy được trực tiếp trong Notebook
     mp.set_start_method('fork', force=True)
     
@@ -334,7 +415,6 @@ def main():
     # KHÔNG dùng torch.cuda.device_count() ở đây để tránh khởi tạo CUDA trước khi fork
     # Mặc định Kaggle T4 x2 là 2 GPU. Ta đếm qua lệnh hệ thống nvidia-smi
     try:
-        import subprocess
         num_gpus = len(subprocess.check_output(['nvidia-smi', '-L']).decode('utf-8').strip().split('\n'))
     except Exception:
         num_gpus = 2  # Fallback cho Kaggle T4 x2

@@ -2,6 +2,9 @@ import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 import json
+import sys
+import time
+import logging
 import torch
 from datasets import load_dataset
 from transformers import (
@@ -9,10 +12,117 @@ from transformers import (
     AutoModelForImageTextToText,
     BitsAndBytesConfig,
     TrainingArguments,
-    Trainer
+    Trainer,
+    TrainerCallback
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from qwen_vl_utils import process_vision_info
+
+# ==========================================
+# CẤU HÌNH LOGGING - ĐẢM BẢO LOG HIỆN RA
+# ==========================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+# Force HuggingFace Transformers logger hiện INFO
+logging.getLogger("transformers").setLevel(logging.INFO)
+logging.getLogger("transformers.trainer").setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# CUSTOM CALLBACK - IN TIẾN TRÌNH CHI TIẾT
+# ==========================================
+class PrintProgressCallback(TrainerCallback):
+    """Callback in tiến trình training chi tiết ra stdout với flush=True."""
+    
+    def __init__(self):
+        self.train_start_time = None
+        self.step_start_time = None
+    
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.train_start_time = time.time()
+        total_steps = state.max_steps
+        print(f"\n{'='*70}", flush=True)
+        print(f"🚀 BẮT ĐẦU TRAINING", flush=True)
+        print(f"   Total steps: {total_steps}", flush=True)
+        print(f"   Epochs: {args.num_train_epochs}", flush=True)
+        print(f"   Batch size (per device): {args.per_device_train_batch_size}", flush=True)
+        print(f"   Gradient accumulation: {args.gradient_accumulation_steps}", flush=True)
+        print(f"   Effective batch size: {args.per_device_train_batch_size * args.gradient_accumulation_steps}", flush=True)
+        print(f"{'='*70}\n", flush=True)
+    
+    def on_step_begin(self, args, state, control, **kwargs):
+        self.step_start_time = time.time()
+    
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """Được gọi mỗi logging_steps - in thông tin chi tiết."""
+        if logs is None:
+            return
+        
+        current_step = state.global_step
+        max_steps = state.max_steps
+        epoch = state.epoch or 0
+        
+        # Lấy loss
+        loss = logs.get("loss", logs.get("eval_loss", None))
+        lr = logs.get("learning_rate", None)
+        
+        # Tính tốc độ và ETA
+        elapsed = time.time() - self.train_start_time if self.train_start_time else 0
+        speed = elapsed / max(current_step, 1)
+        remaining_steps = max_steps - current_step
+        eta_seconds = speed * remaining_steps
+        eta_str = time.strftime("%H:%M:%S", time.gmtime(eta_seconds))
+        elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+        
+        # Lấy thông tin VRAM
+        vram_info = ""
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                allocated = torch.cuda.memory_allocated(i) / 1024**3
+                reserved = torch.cuda.memory_reserved(i) / 1024**3
+                vram_info += f" | GPU{i}: {allocated:.1f}/{reserved:.1f}GB"
+        
+        # Format và print
+        progress_pct = (current_step / max_steps * 100) if max_steps > 0 else 0
+        msg = f"📊 [Step {current_step}/{max_steps} ({progress_pct:.1f}%) | Epoch {epoch:.2f}]"
+        if loss is not None:
+            msg += f" Loss: {loss:.4f}"
+        if lr is not None:
+            msg += f" | LR: {lr:.2e}"
+        msg += f" | Speed: {speed:.1f}s/step | Elapsed: {elapsed_str} | ETA: {eta_str}"
+        msg += vram_info
+        
+        print(msg, flush=True)
+    
+    def on_epoch_end(self, args, state, control, **kwargs):
+        epoch = state.epoch or 0
+        elapsed = time.time() - self.train_start_time if self.train_start_time else 0
+        elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+        print(f"\n🏁 EPOCH {epoch:.0f} HOÀN THÀNH | Elapsed: {elapsed_str}", flush=True)
+        print(f"-"*70, flush=True)
+    
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics:
+            eval_loss = metrics.get("eval_loss", "N/A")
+            print(f"📝 EVAL RESULT: eval_loss = {eval_loss}", flush=True)
+    
+    def on_save(self, args, state, control, **kwargs):
+        print(f"💾 Checkpoint đã lưu tại step {state.global_step}", flush=True)
+    
+    def on_train_end(self, args, state, control, **kwargs):
+        total_time = time.time() - self.train_start_time if self.train_start_time else 0
+        total_str = time.strftime("%H:%M:%S", time.gmtime(total_time))
+        print(f"\n{'='*70}", flush=True)
+        print(f"✅ TRAINING HOÀN TẤT", flush=True)
+        print(f"   Tổng thời gian: {total_str}", flush=True)
+        print(f"   Tổng steps: {state.global_step}", flush=True)
+        print(f"   Best metric: {state.best_metric}", flush=True)
+        print(f"{'='*70}\n", flush=True)
 
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN
@@ -150,13 +260,14 @@ def main():
         use_liger_kernel=True               # Bật Liger Kernel để tối ưu OOM (giảm 50% VRAM ở Loss)
     )
     
-    # 7. Trainer Khởi Tạo
+    # 7. Trainer Khởi Tạo (với Custom Callback)
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
         data_collator=data_collator,
+        callbacks=[PrintProgressCallback()],
     )
     
     # 8. Bắt đầu Train

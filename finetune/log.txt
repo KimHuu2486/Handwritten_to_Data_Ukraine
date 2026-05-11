@@ -1,0 +1,9 @@
+usage: colab_kernel_launcher.py [-h] [--input INPUT] [--output OUTPUT]
+                                [--model MODEL] [--local] [--cpu]
+                                [--device DEVICE]
+colab_kernel_launcher.py: error: unrecognized arguments: -f /root/.local/share/jupyter/runtime/kernel-0cafca64-6399-4a86-9c2f-7aa74945fb45.json
+An exception has occurred, use %tb to see the full traceback.
+
+SystemExit: 2
+/usr/local/lib/python3.12/dist-packages/IPython/core/interactiveshell.py:3561: UserWarning: To exit: use 'exit', 'quit', or Ctrl-D.
+  warn("To exit: use 'exit', 'quit', or Ctrl-D.", stacklevel=1)

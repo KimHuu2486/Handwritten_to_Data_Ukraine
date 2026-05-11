@@ -57,7 +57,10 @@ def process_record(record):
                 "type": r.get("type", "handwritten"),
                 "text": r.get("text", "")
             })
-            
+    
+    # Sắp xếp regions theo y1 (từ trên xuống dưới) để model học output có thứ tự
+    out_regions.sort(key=lambda r: r["bbox"][1])
+    
     # Build format hội thoại chuẩn HuggingFace
     message = {
         "messages": [
