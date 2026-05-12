@@ -1,0 +1,88 @@
+🚀 Bắt đầu Fine-tuning Qwen-VL trên dữ liệu CROPPED siêu nhỏ
+Generating train split: 
+ 25273/0 [00:01<00:00, 19144.22 examples/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%
+ 750/750 [01:36<00:00, 17.73it/s]
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+trainable params: 43,646,976 || all params: 8,810,770,672 || trainable%: 0.4954
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'eos_token_id': 151645, 'bos_token_id': None, 'pad_token_id': 151643}.
+Bắt đầu huấn luyện...
+---------------------------------------------------------------------------
+RuntimeError                              Traceback (most recent call last)
+/tmp/ipykernel_57/3347515898.py in <cell line: 0>()
+    228 
+    229 if __name__ == "__main__":
+--> 230     main()
+
+/tmp/ipykernel_57/3347515898.py in main()
+    220 
+    221     print("Bắt đầu huấn luyện...")
+--> 222     trainer.train()
+    223 
+    224     final_path = os.path.join(OUTPUT_DIR, "qwen_lora_final")
+
+/usr/local/lib/python3.12/dist-packages/transformers/trainer.py in train(self, resume_from_checkpoint, trial, ignore_keys_for_eval)
+   1425         ctx = suppress_progress_bars() if args.push_to_hub else contextlib.nullcontext()
+   1426         with ctx:
+-> 1427             return inner_training_loop(
+   1428                 args=args,
+   1429                 resume_from_checkpoint=resume_from_checkpoint,
+
+/usr/local/lib/python3.12/dist-packages/transformers/trainer.py in _inner_training_loop(self, batch_size, args, resume_from_checkpoint, trial, ignore_keys_for_eval)
+   1507         for epoch in range(epochs_trained, num_train_epochs):
+   1508             self.control = self.callback_handler.on_epoch_begin(self.args, self.state, self.control)
+-> 1509             self._run_epoch(
+   1510                 model=model,
+   1511                 epoch=epoch,
+
+/usr/local/lib/python3.12/dist-packages/transformers/trainer.py in _run_epoch(self, model, epoch, train_dataloader, steps_in_epoch, num_update_steps_per_epoch, trial, ignore_keys_for_eval, start_time, resume_from_checkpoint, epochs_trained, steps_trained_in_current_epoch)
+   1735                     sync_context = functools.partial(self.accelerator.no_sync, model=model)
+   1736                 with sync_context():
+-> 1737                     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+   1738 
+   1739                 if (
+
+/usr/local/lib/python3.12/dist-packages/trl/trainer/sft_trainer.py in training_step(self, *args, **kwargs)
+   1720     def training_step(self, *args, **kwargs):
+   1721         with self.maybe_activation_offload_context:
+-> 1722             return super().training_step(*args, **kwargs)
+   1723 
+   1724     def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
+
+/usr/local/lib/python3.12/dist-packages/transformers/trainer.py in training_step(***failed resolving arguments***)
+   1935                 kwargs["scale_wrt_gas"] = False
+   1936 
+-> 1937             self.accelerator.backward(loss, **kwargs)
+   1938 
+   1939             return loss.detach()
+
+/usr/local/lib/python3.12/dist-packages/accelerate/accelerator.py in backward(self, loss, **kwargs)
+   2832             return
+   2833         elif self.scaler is not None:
+-> 2834             self.scaler.scale(loss).backward(**kwargs)
+   2835         elif learning_rate is not None and self.has_lomo_optimizer:
+   2836             self.lomo_backward(loss, learning_rate)
+
+/usr/local/lib/python3.12/dist-packages/torch/_tensor.py in backward(self, gradient, retain_graph, create_graph, inputs)
+    628                 inputs=inputs,
+    629             )
+--> 630         torch.autograd.backward(
+    631             self, gradient, retain_graph, create_graph, inputs=inputs
+    632         )
+
+/usr/local/lib/python3.12/dist-packages/torch/autograd/__init__.py in backward(tensors, grad_tensors, retain_graph, create_graph, grad_variables, inputs)
+    362     # some Python versions print out the first line of a multi-line function
+    363     # calls in the traceback and some print out the last line
+--> 364     _engine_run_backward(
+    365         tensors,
+    366         grad_tensors_,
+
+/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py in _engine_run_backward(t_outputs, *args, **kwargs)
+    863         unregister_hooks = _register_logging_hooks_on_whole_graph(t_outputs)
+    864     try:
+--> 865         return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+    866             t_outputs, *args, **kwargs
+    867         )  # Calls into the C++ engine to run the backward pass
+
+RuntimeError: hook 'cast_grad_hook' has changed the type of value (was CUDABFloat16Type got torch.cuda.HalfTensor)

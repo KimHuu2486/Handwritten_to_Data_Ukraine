@@ -11,10 +11,9 @@ from transformers import (
     AutoProcessor,
     AutoModelForImageTextToText,
     BitsAndBytesConfig,
-    TrainingArguments,
-    Trainer,
     TrainerCallback
 )
+from trl import SFTConfig, SFTTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from qwen_vl_utils import process_vision_info
 
@@ -136,24 +135,31 @@ OUTPUT_DIR = 'qwen3_vl_lora_output'
 # VD: '/kaggle/input/rukopys-checkpoint/checkpoint-123'
 RESUME_CHECKPOINT_DIR = ''
 
-class OOMRecoveryTrainer(Trainer):
+class OOMRecoverySFTTrainer(SFTTrainer):
     def training_step(self, model, inputs, num_items_in_batch=None):
         try:
             import inspect
-            sig = inspect.signature(Trainer.training_step)
+            sig = inspect.signature(super().training_step)
             if 'num_items_in_batch' in sig.parameters:
-                return super().training_step(model, inputs, num_items_in_batch=num_items_in_batch)
+                loss = super().training_step(model, inputs, num_items_in_batch=num_items_in_batch)
             else:
-                return super().training_step(model, inputs)
+                loss = super().training_step(model, inputs)
+            
+            # FIX: Ép loss về device của Trainer để tránh ValueError trên 2 GPU (device_map="auto")
+            if self.args.device != loss.device:
+                loss = loss.to(self.args.device)
+                
+            return loss
         except torch.cuda.OutOfMemoryError:
             import gc
             print("\n🚨 [OOM WARNING] Hết VRAM tại một batch! Đang dọn dẹp và skip batch...", flush=True)
             for p in model.parameters():
-                if p.grad is not None:
-                    del p.grad  # Xóa các gradient đang tính dở dang
+                p.grad = None  # Xóa sạch các gradient đang tính dở dang một cách an toàn
             torch.cuda.empty_cache()
             gc.collect()
-            return torch.tensor(0.0, device=model.device)
+            
+            # Trả về tensor loss = 0. Không dùng requires_grad=True vì Trainer đã lo backward bên trong training_step rồi.
+            return torch.tensor(0.0, device=self.args.device)
 
 def main():
     print(f"Bắt đầu quá trình cấu hình Fine-tuning cho Qwen3-VL-8B")
@@ -183,10 +189,29 @@ def main():
         device_map="auto",
         max_memory={0: "14GB", 1: "6GB"},  # Ép GPU 1 xuống 6GB để lấy tới 9GB VRAM trống cho Loss
         quantization_config=quantization_config,
+        torch_dtype=torch.float16,          # FIX: Ép kiểu float16 thay vì bfloat16 mặc định của model để chạy được trên T4
         trust_remote_code=True,
         attn_implementation="sdpa", # Quan trọng để tiết kiệm VRAM
         low_cpu_mem_usage=True
     )
+    
+    # FIX TRIỆT ĐỂ LỖI BFLOAT16: Các mô hình đa phương thức (VLM) thường lồng config bên trong.
+    # Dù đã truyền torch_dtype=float16 ở trên, text_config bên trong vẫn lén giữ bfloat16 gây crash GradScaler!
+    model.config.torch_dtype = torch.float16
+    if hasattr(model.config, "text_config"):
+        model.config.text_config.torch_dtype = torch.float16
+        if hasattr(model.config.text_config, "dtype"):
+            model.config.text_config.dtype = "float16"
+    if hasattr(model.config, "vision_config"):
+        model.config.vision_config.torch_dtype = torch.float16
+        if hasattr(model.config.vision_config, "dtype"):
+            model.config.vision_config.dtype = "float16"
+            
+    # Ép toàn bộ tham số sót lại (như lm_head) về float16
+    for name, param in model.named_parameters():
+        if param.dtype == torch.bfloat16:
+            param.data = param.data.to(torch.float16)
+
     
     # Kích hoạt gradient checkpointing để tiết kiệm memory
     model = prepare_model_for_kbit_training(model)
@@ -204,6 +229,15 @@ def main():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    
+    # FIX CUỐI CÙNG VÀ CHẮC CHẮN NHẤT CHO LỖI BFLOAT16 GRADSCALER:
+    # Mặc dù ta đã ép model về float16, thư viện PEFT khi khởi tạo LoRA có thể vô tình kế thừa lại bfloat16 
+    # từ một ngóc ngách nào đó của Qwen. GradScaler của T4 sẽ crash nếu Gradient là bfloat16.
+    # GIẢI PHÁP: Ép toàn bộ trọng số đang được train (LoRA adapters) sang float32.
+    # float32 không chỉ được GradScaler hỗ trợ 100% mà còn giúp hội tụ tốt hơn (chống underflow).
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            param.data = param.data.to(torch.float32)
     
     # 5. Data Collator Tùy Chỉnh Cho VLM
     def data_collator(examples):
@@ -236,38 +270,54 @@ def main():
         
         # Masking phần User Prompt (Chỉ tính Loss cho câu trả lời của Assistant)
         try:
-            search_seq = processor.tokenizer.encode("<|im_start|>assistant\n", allowed_special="all")
+            # FIX: Thêm add_special_tokens=False để không bị dính BOS token
+            search_seq = processor.tokenizer.encode("<|im_start|>assistant\n", allowed_special="all", add_special_tokens=False)
             search_len = len(search_seq)
             for i in range(len(labels)):
                 label_list = labels[i].tolist()
+                
+                # Logic skip dữ liệu theo yêu cầu:
+                # Vì padding=True và batch_size=1, nếu len == 2048 tức là mẫu này đã bị cắt cụt do vượt quá max_length
+                is_truncated = (len(label_list) == 2048)
+                
                 match_idx = -1
                 for j in range(len(label_list) - search_len + 1):
                     if label_list[j:j+search_len] == search_seq:
                         match_idx = j + search_len
                         break
                 
-                if match_idx != -1:
+                if match_idx != -1 and not is_truncated:
                     labels[i, :match_idx] = -100
                 else:
-                    # Nếu không tìm thấy marker, mask TOÀN BỘ để tránh loss bị nhiễu
+                    # Nếu không tìm thấy marker HOẶC mẫu bị cắt bớt, mask TOÀN BỘ (-100) để bỏ qua sample này
                     labels[i, :] = -100
+                    if is_truncated:
+                        print(f"\n⚠️ Bỏ qua sample (Mask = -100) vì vượt quá giới hạn 2048 token.", flush=True)
         except Exception as e:
             print(f"Warning: Masking user prompt failed: {e}")
 
         batch["labels"] = labels
         
+        # FIX TỐI ƯU HÓA VRAM & TỐC ĐỘ: Ép kiểu float32 -> float16 cho ảnh
+        # Vì đã tắt fp16=False ở Trainer để tránh lỗi conflict, tính năng autocast bị vô hiệu.
+        # Processor mặc định xuất pixel_values dưới dạng float32, gây chậm và ngốn gấp đôi VRAM.
+        # Chuyển đổi thủ công về float16 giúp kích hoạt Tensor Cores của thẻ T4 và tiết kiệm VRAM!
+        for key, value in batch.items():
+            if isinstance(value, torch.Tensor) and value.dtype == torch.float32:
+                batch[key] = value.to(torch.float16)
+        
         return batch
 
     # 6. Training Arguments
-    print("Đang thiết lập Training Arguments...")
-    training_args = TrainingArguments(
+    print("Đang thiết lập Training Arguments (SFTConfig)...")
+    training_args = SFTConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=1,      # Bắt buộc = 1 trên Kaggle T4
         gradient_accumulation_steps=8,      # Tạo effective batch size = 8
         per_device_eval_batch_size=1,
         learning_rate=2e-5,
         num_train_epochs=3,
-        fp16=True,                          # Mixed precision training
+        fp16=False,                         # TẮT fp16 CỦA TRAINER ĐỂ TẮT GRADSCALER (Fix lỗi BFloat16 trên T4)
         optim="paged_adamw_8bit",           # Tiết kiệm tối đa VRAM cho Optimizer
         max_grad_norm=0.3,
         warmup_ratio=0.03,
@@ -278,11 +328,13 @@ def main():
         report_to="none",                   # Tắt WandB trên Kaggle
         remove_unused_columns=False,        # QUAN TRỌNG: False vì ta cần cột "messages" trong collator
         gradient_checkpointing=True,        # Giảm OOM
-        use_liger_kernel=True               # Bật Liger Kernel để tối ưu OOM (giảm 50% VRAM ở Loss)
+        use_liger_kernel=False,             # TẮT Liger Kernel (Nguyên nhân gây lỗi Triton device mismatch trên multi-GPU)
+        dataset_text_field="",              # SFTTrainer field (bỏ trống vì ta dùng custom collator)
+        dataset_kwargs={"skip_prepare_dataset": True}, # Bỏ qua logic auto-format của TRL
     )
     
-    # 7. Trainer Khởi Tạo (với Custom Callback và OOM Recovery)
-    trainer = OOMRecoveryTrainer(
+    # 7. Trainer Khởi Tạo (với Custom Callback và OOM Recovery SFT)
+    trainer = OOMRecoverySFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
