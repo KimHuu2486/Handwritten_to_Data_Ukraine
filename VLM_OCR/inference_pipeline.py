@@ -7,14 +7,16 @@ from PIL import Image
 from transformers import AutoProcessor, AutoModelForImageTextToText
 from qwen_vl_utils import process_vision_info
 
+SYSTEM_PROMPT = "You are an expert OCR assistant. You ONLY output the transcribed text exactly as written in the image. Never explain, never refuse, never add commentary."
+
 def generate_prompt_for_rukopys(box_class):
     if box_class in ["handwritten", "printed", "annotation"]:
-        return "Transcribe the text in this image precisely in Ukrainian/Russian:"
+        return "Transcribe the text in this image exactly as written. Output ONLY the raw text, nothing else. /no_think"
     elif box_class == "formula":
-        return "Transcribe the mathematical formula in this image into LaTeX format:"
+        return "Transcribe the formula in this image into LaTeX. Output ONLY the LaTeX expression, nothing else. /no_think"
     elif box_class == "table":
-        return "Transcribe the table in this image into pipe-separated values format (e.g., cell1|cell2|cell3):"
-    return "Transcribe the content of this image:"
+        return "Transcribe the table in this image into pipe-separated values (e.g., cell1|cell2|cell3). Output ONLY the table, nothing else. /no_think"
+    return "Transcribe the content of this image exactly as written. Output ONLY the text, nothing else. /no_think"
 
 def main():
     # 1. Khởi tạo BASE MODEL
@@ -130,11 +132,14 @@ def main():
             
         # Gom tin nhắn cho Batch
         messages_list = [
-            [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": prompt}]}]
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": prompt}]}
+            ]
             for (_, _, _, _, img, prompt) in batch
         ]
         
-        batch_texts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True) for m in messages_list]
+        batch_texts = [processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True, enable_thinking=False) for m in messages_list]
         batch_img, batch_vid = process_vision_info(messages_list)
         
         inputs = processor(
@@ -146,7 +151,7 @@ def main():
         ).to(model.device)
         
         # GPU chạy đồng loạt (Tắt sampling để sinh chữ cực nhanh)
-        generated_ids = model.generate(**inputs, max_new_tokens=128, do_sample=False)
+        generated_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
         generated_ids_trimmed = [
             out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
