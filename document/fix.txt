@@ -1,0 +1,44 @@
+1. Lỗ hổng Pipeline: Thiếu mảnh ghép "Sử dụng công cụ" (Tool-use)Trong Bước 2 (Cắt ảnh) và Bước 3 (Gửi API), bạn đang tự động cắt ảnh mờ (crop) rồi mới gửi cho GPT-4o/Gemini.Vấn đề: Nếu bạn chỉ dạy mô hình nhìn ảnh đã cắt rồi suy luận, thì lúc inference thực tế, làm sao mô hình biết cách tự sinh ra cú pháp {"bbox_2d": [x1, y1, x2, y2]} để yêu cầu cắt ảnh?Cách khắc phục: Bạn phải gửi cho GPT-4o Ảnh toàn cảnh (Full Image) và cung cấp tọa độ region_bbox trong prompt. Hãy yêu cầu GPT-4o đóng vai: "Bạn đang đọc một tài liệu. Khi đến tọa độ [x1, y1, x2, y2], bạn thấy chữ bị mờ. Hãy giả vờ đưa ra lệnh gọi công cụ cắt ảnh tại tọa độ này, sau đó mới bắt đầu suy luận chi tiết." Điều này giúp dữ liệu sinh ra có chứa lệnh gọi công cụ, khớp hoàn toàn với Stage 3 của pipeline.2. Lỗ hổng Prompt: Không yêu cầu sinh uncertainty_scoresTrong cấu trúc file cot_samples.jsonl, bạn có trường uncertainty_scores (ví dụ: [0.73]), nhưng trong Bước 3 (Prompt) lại không hề có dòng lệnh nào ép mô hình phải chấm điểm độ tự tin.Vấn đề: Trình bóc tách (Parser) ở Bước 4 sẽ lấy con số 0.73 này từ đâu nếu LLM không nhả ra?Cách khắc phục: Sửa lại Prompt và quy định thêm 1 thẻ xuất dữ liệu nữa. Ví dụ: "For each word you are unsure about, provide a confidence score from 0.0 to 1.0 inside the tag <uncertainty_scores>."3. Lỗ hổng QC Rule 3: Ngưỡng lý luận quá thấpVấn đề: Bạn đặt điều kiện chiều dài thẻ <reasoning> $\ge 20$ ký tự. 20 ký tự là cực kỳ ngắn (ví dụ: "Chữ này nhìn giống A" - đã là 22 ký tự). Một lý luận chuẩn chỉnh đa phương thức (vừa tả nét chữ, vừa ráp ngữ cảnh) thường phải dài từ 30 - 50 từ (khoảng 150 - 300 ký tự).Cách khắc phục: Nâng mức threshold của QC Rule 3 lên ít nhất 100 ký tự. Nếu GPT-4o trả về dưới 100 ký tự, chứng tỏ nó đang lười biếng và cần bị bắt trượt (QC Fail) để retry lại với prompt gắt gao hơn.Điều chỉnh nhỏ cho Prompt (Bước 3):Prompt hiện tại của bạn: "This is a handwritten image, and the answer... is [ground_truth]. You need to act like an expert and explain why you deciphered that answer..." dễ làm mô hình sinh ra hội chứng "bợ đỡ" (sycophancy) - tức là nó nhắm mắt biện minh cho ground_truth kể cả khi không nhìn rõ nét.Hãy thêm một câu rào cản: "Do not just blindly justify the ground truth. Explicitly point out which strokes make it confusing, and explain how the surrounding text context helped you eliminate incorrect guesses."
+4. Lỗ hổng Hindsight Bias (Hội chứng "Biết rồi nói gì cũng đúng")
+Vấn đề: Ở Bước 3, bạn nạp trực tiếp ground_truth vào Prompt: "Câu trả lời là [ground_truth]. Hãy giải thích vì sao". Khi GPT-4o đã biết trước đáp án, nó sẽ bị "thiên kiến nhận thức muộn". Nó sẽ tưởng tượng và bịa ra (hallucinate) các nét chữ không hề tồn tại trên ảnh để biện minh cho đáp án đó sao cho logic nhất.
+
+Ví dụ: Chữ trên ảnh mờ tịt không thể đọc được, nhưng vì bạn bảo đó là chữ "Data", GPT-4o sẽ viết: "Tôi thấy nét cong của chữ D và gạch ngang của chữ t...".
+
+Hậu quả: Bạn đang train cho mô hình khả năng "bịa lý do bảo vệ đáp án" chứ không phải khả năng "suy luận để tìm đáp án".
+
+Cách khắc phục (Two-stage Prompting): * Đừng đưa ground_truth ngay. Hãy bắt GPT-4o "đọc mù" (Blind Test) trước: "Hãy đọc từ bị mờ này".
+
+Nếu nó đọc đúng ground_truth -> Yêu cầu nó xuất CoT giải thích vì sao nó tự tin.
+
+Nếu nó đọc sai -> Lúc này mới cung cấp ground_truth và prompt: "Bạn đã đoán sai là [X], đáp án đúng là [Y]. Hãy phân tích nét chữ và ngữ cảnh xem tại sao bạn lại bị nhầm lẫn, và làm thế nào để lần sau suy luận ra đúng chữ [Y]". Đây mới là dữ liệu CoT "ăn tiền" nhất!
+
+5. Lỗ hổng Ngữ cảnh (Context Isolation)
+Vấn đề: Trong Schema ở phần <context_clues>, bạn muốn AI dùng manh mối ngữ nghĩa từ đoạn văn. Nhưng đầu vào bạn chỉ cấp region_bbox (tọa độ của đúng cái từ bị mờ đó) và ground_truth của đúng từ đó. AI lấy đâu ra văn bản xung quanh để mà suy luận ngữ cảnh?
+
+Cách khắc phục: * Trong metadata truyền vào Bước 3, bạn phải truyền kèm Transcript (Văn bản toàn bộ dòng/đoạn) chứa cái từ đó, và đánh dấu từ bị mờ bằng ký hiệu (VD: "He bought a [target_word] yesterday"). Có như vậy thẻ <context_clues> sinh ra mới thật sự có logic.
+
+6. Lỗ hổng Ép buộc suy luận (Ép phải đọc các ca "Vô phương cứu chữa")
+Vấn đề: Trong Bước 1, bạn chọn cả nhãn illegible (hoàn toàn không thể đọc được - ví dụ bị mực đổ lên che mất 90%). Nếu bạn ép GPT-4o phải sinh ra 5 thẻ lý luận cho một cục mực đen thui, nó sẽ lại sinh ra "Rác".
+
+Cách khắc phục:
+
+Cần thiết lập một nhãn Thoát hiểm (Escape Hatch). Thêm vào Prompt: "Nếu từ này bị che khuất hoàn toàn hoặc hỏng vật lý đến mức con người cũng không thể đoán được dù có ngữ cảnh, hãy xuất <reasoning>Unrecoverable</reasoning> và <conclusion>UNREADABLE</conclusion>."
+
+Cập nhật QC Rule 1: Cho phép Pass nếu conclusion = UNREADABLE. Những mẫu này sẽ dạy cho model biết "khi nào thì nên bỏ cuộc", một đặc tính cực kỳ quan trọng của các hệ thống AI đáng tin cậy.
+
+7. Lỗ hổng lưu trữ Lệnh tương tác (Missing Action Tag)
+Vấn đề: Tiếp nối Lỗ hổng số 1 ở câu trả lời trước (để model tự sinh tọa độ Zoom-in). Trong format cot_samples.jsonl và 5 thẻ parse ở Bước 4 của bạn, không có chỗ nào lưu trữ cái lệnh gọi công cụ cắt ảnh cả!
+
+Cách khắc phục:
+
+Bạn phải bổ sung một thẻ <action> hoặc đưa thẳng vào trong <reasoning>.
+
+Cấu trúc thẻ <reasoning> chuẩn để fine-tune VLM-R³ phải trông như thế này:
+
+XML
+<reasoning>
+  Tôi không nhìn rõ từ thứ 3. Tôi sẽ gọi lệnh cắt ảnh.
+  <action>{"bbox_2d": [100, 200, 150, 220]}</action>
+  Sau khi quan sát vùng ảnh cắt, kết hợp với <context_clues>, tôi nhận thấy...
+</reasoning>
+Cập nhật QC Rule: Yêu cầu bắt buộc phải có ít nhất 1 chuỗi json {"bbox_2d": ...} nằm bên trong text trả về nếu độ mờ đạt mức nào đó.

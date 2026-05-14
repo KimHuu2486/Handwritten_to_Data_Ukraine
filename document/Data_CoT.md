@@ -48,11 +48,11 @@ Bao gồm 3 file chính để quản lý dữ liệu và theo dõi quá trình c
   "region_bbox": [x1, y1, x2, y2],
   "region_type": "handwritten",
   "ground_truth": "Сьогодні гарна погода",
-  "cot_reasoning": "<ambiguous_chars>...</ambiguous_chars>...",
+  "cot_reasoning": "<action>{\"bbox_2d\": [x1, y1, x2, y2]}</action> <reasoning>...</reasoning>",
   "uncertainty_words": ["Сьогодні"],
   "uncertainty_scores": [0.73],
   "model_name": "gpt-4o",
-  "prompt_version": "cot_v1",
+  "prompt_version": "cot_v2",
   "created_at": "2026-05-14T00:00:00Z"
 }
 ```
@@ -86,31 +86,40 @@ Dưới đây là các bước tự động theo luồng mà Data Engineer (DE) 
 - Loại bỏ các ảnh dễ đọc, chỉ giữ lại những vùng chữ có đánh nhãn `legibility` là `partially_legible` (hơi nhòe/khó đọc) hoặc `illegible` (rất khó đọc).
 - Cố gắng nhặt ra khoảng ~5,000 vùng chữ phù hợp.
 
-**Bước 2: Cắt ảnh (Image Cropping)**
-- Dùng ảnh gốc được chỉ định trong thông tin `image_id` (hoặc `image_path`).
-- Dựa vào tọa độ box (`region_bbox`), viết hàm cắt trực tiếp vùng chữ đó ra thành một hình con nhỏ hơn (region crop). Mục đích để Vision Model tập trung phân tích đúng dòng chữ mờ này thay vì nhìn cả tờ giấy.
+**Bước 2: Chuẩn bị Ngữ cảnh toàn cục (Context Preparation)**
+- Thay vì cắt ảnh mờ (crop) ngay lập tức, sử dụng **Ảnh toàn cảnh (Full Image)**.
+- Lấy Transcript (Văn bản toàn bộ dòng/đoạn) chứa từ đó, đánh dấu từ bị mờ bằng ký hiệu (Ví dụ: `[target_word]`).
+- Lấy tọa độ khu vực chữ từ `region_bbox`.
 
-**Bước 3: Chuẩn bị Prompt & Gửi API (Generation)**
-- Gửi cho Model Vision (GPT-4o/Gemini/model đủ lớn, đủ đáng tin cậy)  2 thứ: **Ảnh vừa cắt** + **Text thực tế của ảnh đó** (`ground_truth`).
-- Prompt (tự custom lại cho hiệu quả hơn): *"This is a handwritten image, and the answer extracted from the image is [ground_truth]. You need to act like an expert and explain why you deciphered that answer. Are there any ink strokes or letters that are easily confused with other words? Analyze it step-by-step for me."*
+**Bước 3: Gửi API & Prompt 2 Giai đoạn (Two-stage Prompting & Tool-use)**
+- **Giai đoạn 1 (Blind Test):** Cung cấp Ảnh toàn cảnh, `region_bbox`, Transcript đã đánh dấu và yêu cầu AI phỏng đoán chữ bị mờ. Bắt buộc mô hình xuất lệnh mô phỏng cắt ảnh trước khi đoán: `<action>{"bbox_2d": [x1, y1, x2, y2]}</action>`.
+- **Giai đoạn 2 (CoT Hindsight):** 
+  - Nếu Giai đoạn 1 đoán đúng -> Yêu cầu xuất CoT lý luận.
+  - Nếu đoán sai -> Cấp `ground_truth` thực sự và prompt: *"Bạn đã đoán sai là [X], đáp án đúng là [ground_truth]. Do not just blindly justify the ground truth. Explicitly point out which strokes make it confusing, and explain how the surrounding text context helped you eliminate incorrect guesses."*
+- **Yêu cầu bổ sung cho Prompt:** 
+  - Ép xuất điểm độ tự tin: *"For each word you are unsure about, provide a confidence score from 0.0 to 1.0 inside the tag <uncertainty_scores>."*
+  - Lối thoát hiểm (Escape Hatch): *"Nếu từ này bị che khuất hoàn toàn hoặc hỏng vật lý đến mức không thể đoán được, hãy xuất <reasoning>Unrecoverable</reasoning> và <conclusion>UNREADABLE</conclusion>."*
 
 **Bước 4: Bóc tách text trả về (Parsing)**
-- Lấy kết quả AI trả ra, dùng Regex lập trình sẵn để tách dữ liệu nhét vào 5 thẻ sau:
+- Lấy kết quả AI trả ra, dùng Regex lập trình sẵn để tách dữ liệu nhét vào các thẻ sau:
+  - `<action>`: Chứa chuỗi JSON công cụ cắt ảnh.
   - `<ambiguous_chars>`: chữ cái nào khó đọc / dễ nhầm.
   - `<visual_analysis>`: phân tích đặc điểm thị giác (ví dụ: nét móc quá dài).
-  - `<context_clues>`: manh mối ngữ nghĩa từ đoạn văn giúp dịch được chữ khó.
+  - `<context_clues>`: manh mối ngữ nghĩa từ transcript giúp đoán từ mờ.
   - `<reasoning>`: chuỗi suy luận chi tiết.
-  - `<conclusion>`: kết luận chốt văn bản.
+  - `<uncertainty_scores>`: Điểm float (0.0 - 1.0).
+  - `<conclusion>`: kết luận chốt văn bản hoặc `UNREADABLE`.
 
 **Bước 5: Kiểm duyệt tự động (QC - Quality Control)**
 - Code kiểm tra khắt khe để tránh đưa rác vào dữ liệu training:
-  1. Thẻ `conclusion` CÓ KHỚP 100% với `ground_truth` ban đầu không? (Vì nếu AI lái sang kết quả khác tức là hallucination/sai lệch).
-  2. Bố cục trả về có đủ 5 thẻ không?
-  3. Chuỗi `reasoning` có quá ngắn không?
-  4. Có bị dính vòng lặp n-gram (bệnh nói nhảm liên tục lặp lại 1 câu của LLM) không?
+  1. Thẻ `conclusion` CÓ KHỚP 100% với `ground_truth` ban đầu không (Hoặc là UNREADABLE)? 
+  2. Bố cục trả về có đủ thẻ không?
+  3. Chuỗi `reasoning` có quá ngắn không (yêu cầu >= 100 ký tự)?
+  4. Có bị dính vòng lặp n-gram không?
+  5. Có tồn tại format sinh json tool-use không?
 
 **Bước 6: Trích xuất Uncertainty**
-- Dùng script cào qua vùng lý luận để lọc thêm 1 mảng các từ được AI nhấn mạnh là khó đoán (`uncertainty_words`).
+- Dùng script cào qua vùng lý luận để lọc thêm 1 mảng các từ được AI nhấn mạnh là khó đoán (`uncertainty_words`) kết hợp với `<uncertainty_scores>`.
 
 **Bước 7: Phân luồng lưu trữ & Retry**
 - Nếu **Vượt qua bước QC (Bước 5):** Đóng gói thành Json và nối dòng vào `cot_samples.jsonl`.
@@ -127,27 +136,31 @@ Dưới đây là các bước tự động theo luồng mà Data Engineer (DE) 
 - Parse fail nếu thiếu tag hoặc sai định dạng.
 
 ## QC Rules
-Mục đích của bộ Rules này là đảm bảo dữ liệu đưa vào fine-tune phải "sạch", triệt tiêu hoàn toàn sự "ảo giác" (hallucination) thường gặp của AI. Một mẫu (sample) sẽ bị ĐÁNH TRƯỢT nếu vi phạm 1 trong 4 quy tắc sau:
+Mục đích của bộ Rules này là đảm bảo dữ liệu đưa vào fine-tune phải "sạch", triệt tiêu hoàn toàn sự "ảo giác" (hallucination) thường gặp của AI. Một mẫu (sample) sẽ bị ĐÁNH TRƯỢT nếu vi phạm 1 trong các quy tắc sau:
 
-**1. Rule 1: Khớp đáp án (Conclusion Match)**
+**1. Rule 1: Khớp đáp án (Conclusion Match) & Lối thoát hiểm (Escape Hatch)**
 - So sánh chuỗi text nằm trong thẻ `<conclusion>` với nhãn gốc (`ground_truth`).
-- **Yêu cầu:** Bắt buộc phải giống nhau **100% (exact match)**.
-- **Tại sao:** Nếu AI phân tích một hồi nhưng lại chốt ra một đáp án khác với thực tế, có nghĩa là tư duy (reasoning) của nó bị sai lệch, dòng tư duy đó không thể dùng để dạy mô hình khác được.
+- **Yêu cầu:** Bắt buộc giống nhau **100% (exact match)**.
+- **Ngoại lệ hợp lệ:** Cho phép Pass nếu mô hình chủ động sinh ra `<conclusion>UNREADABLE</conclusion>` (đối với văn bản vật lý bị hủy hoại hoàn toàn, không thể đoán). Phải đi kèm `<reasoning>Unrecoverable</reasoning>`.
 
 **2. Rule 2: Cấu trúc nguyên vẹn (Format Completion)**
-- Chuỗi trả về từ AI bắt buộc phải bóc tách (parse) thành công đủ cả 5 thẻ xml.
-- **Yêu cầu:** Không thiếu thẻ nào, không sai chính tả thẻ (ví dụ thẻ quên viết `</reasoning>`).
+- Chuỗi trả về từ AI bắt buộc phải bóc tách (parse) thành công đủ các thẻ xml định sẵn.
+- **Yêu cầu:** Phải chứa `<action>`, `<reasoning>`, `<conclusion>`, `<uncertainty_scores>`.
 - **Tại sao:** Pipeline cần sự đồng nhất. Khi train, mô hình cần học đúng chuẩn format đã định trước. Một kết quả trả thiếu thẻ sẽ làm gãy schema JSON khi lưu data.
 
 **3. Rule 3: Độ dài lý luận (Reasoning Length)**
 - Đếm tổng số ký tự bên trong thẻ `<reasoning>`.
-- **Yêu cầu:** Chiều dài chuỗi lý luận $\ge 20$ ký tự.
-- **Tại sao:** Loại bỏ những lần AI "lười biếng", đưa ra luận điểm quá ngắn gọn (Ví dụ: "Chữ này mờ nên tôi đoán thế"). Chúng ta muốn thu thập các lập luận từng nét vẽ kỹ càng.
+- **Yêu cầu:** Chiều dài chuỗi lý luận $\ge 100$ ký tự (Trừ ngoại lệ UNREADABLE).
+- **Tại sao:** Loại bỏ những lần AI "lười biếng", đưa ra luận điểm quá ngắn gọn. Lý luận đa phương thức thực tế cần tối thiểu 30-50 từ (150-300 ký tự) mới đủ chất lượng và sâu sắc.
 
 **4. Rule 4: Chống lặp vòng (N-gram Loop Detection)**
 - Quét qua toàn bộ nội dung mà LLM sinh ra.
 - **Yêu cầu:** Không được có một chuỗi ký tự (hoặc từ) bị lặp lại liên tiếp quá giới hạn (threshold = 5).
 - **Tại sao:** Hiện tượng sinh lặp (repetition/degeneration) là lỗi cực kỳ phổ biến ở các Large Language Model khi chúng bị lạc hướng. Code QC cần phát hiện và chặn lại để không đẩy đoạn text rác "nét móc này nét móc này nét móc này..." vào data.
+
+**5. Rule 5: Chứa lệnh gọi công cụ cắt (Tool-use Action Requirement)**
+- **Yêu cầu:** Trong nội dung trả về bắt buộc phải sinh ra thẻ `<action>` chứa đoạn JSON hợp lệ lưu tọa độ: `{"bbox_2d": [x1, y1, x2, y2]}`.
+- **Tại sao:** Đảm bảo mô hình được fine-tune khả năng xuất tọa độ (Action) để tự tạo vùng nhìn phóng to (crop tool) trước khi bắt đầu chuỗi suy luận chi tiết.
 
 **Xử lý khi trượt QC:** Tích hợp với luồng Retry (Thử lại). Bất cứ rule nào Fail đều sẽ gán cờ "qc_fail", ghi rõ lỗi vào biến `error_detail` (để log lại vào `cot_failed.jsonl`), sau đó bắt đầu gọi lại API.
 
