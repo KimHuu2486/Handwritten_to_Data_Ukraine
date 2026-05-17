@@ -1,44 +1,53 @@
 # 📝 Báo cáo ngữ cảnh dự án (Project Context)
 
 ## 1. 🎯 Tóm tắt dự án (Project Overview)
-
-- **Mục tiêu:** Xây dựng pipeline nhận dạng chữ viết tay (Handwritten Text Recognition - HTR) và trích xuất thông tin tài liệu cho cuộc thi Kaggle "Handwritten to Data" và **chuẩn bị bài báo nghiên cứu khoa học (ACCV/CSONet 2026)**. Giải pháp tập trung vào thiết kế End-to-end với Qwen3-VL 8B và phương pháp **Uncertainty-Aware Chain-of-Thought (CoT)**.
-- **Trạng thái hiện tại:** Đang phát triển mạnh mẽ. Đã hoàn thiện kiến trúc chiến lược tổng thể, thiết kế xong pipeline tạo Data CoT chuẩn sản xuất, và đang trong quá trình thu thập/loại nhiễu dữ liệu.
+- **Mục tiêu:** Xây dựng pipeline End-to-End Document Understanding cho cuộc thi Kaggle Handwritten to Data (RUKOPYS), đầu ra là submission CSV gồm bbox + type + text cho tài liệu viết tay tiếng Ukraina.
+- **Mục tiêu phụ:** Chuẩn bị hướng nghiên cứu VLM + CoT (Curriculum Silver -> Gold -> CoT + hậu xử lý) theo lộ trình ablation và cache-first.
+- **Trạng thái hiện tại:** Đang phát triển. Đã có notebook Stage 1 (silver warm-up) và Stage 2 (gold fine-tune), cùng notebook inference/submission hai-pass (page JSON + crop OCR). Đang khóa B2 baseline, chuẩn bị ablation theo data/model plan giai đoạn tiếp theo.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
-
-- **Ngôn ngữ chủ đạo:** Python.
-- **Mô hình / AI:** Vision Language Models (Qwen3-VL-8B, GPT-4o cho sinh Data CoT), LoRA (fine-tune), mô hình phát hiện vật thể (YOLOv10 cho region extraction).
-- **Xử lý dữ liệu:** Pandas, JSON, CSV, Pillow.
-- **Metric Đánh giá:** Levenshtein distance, IoU Matching, Text Normalization.
+- **Frontend/Client:** Không có frontend; workflow chủ yếu qua Kaggle Notebook + script Python.
+- **Backend/Server:** Không có server riêng; pipeline batch offline.
+- **Database:** Không dùng DB; dữ liệu ở JSONL/CSV.
+- **Công cụ/Thư viện khác:** Python, PyTorch, Transformers, TRL (SFTTrainer), PEFT (LoRA/QLoRA), bitsandbytes, qwen-vl-utils, PIL, pandas, multiprocessing.
+- **Mô hình chính:** Qwen3-VL-8B (detection+transcription end-to-end), Qwen2.5-1.5B-Instruct (spell-check text hậu xử lý).
+- **Metric/chuẩn đánh giá:** IoU matching, class accuracy, CER/PageCER, text normalization theo rule chính thức.
 
 ## 3. ✅ Công việc đã hoàn thành (Completed Tasks)
-
-- [x] Phân tích kỹ rule chấm điểm của BTC (chi tiết về IoU >= 0.5, xử lý text normalization, không cần tự sort bbox).
-- [x] Phát triển các baseline dự đoán (Zero-shot baseline) và pipeline tiền xử lý dataset.
-- [x] Kịch bản huấn luyện (Fine-tune VLM qua LoRA) trên multi-GPU (xử lý OOM PyTorch allocator trên T4, fallback Float16/Float32).
-- [x] Tối ưu hóa pipeline Inference kết hợp YOLO (trích xuất vùng) và Qwen-VL (nhận diện).
-- [x] Lập kế hoạch chiến lược kiến trúc tổng quan (`plan_VLM.md`) với pipeline Curriculum Learning (Silver -> Gold -> CoT -> Post-processing).
-- [x] Xây dựng chi tiết hệ thống quy trình tạo dữ liệu CoT chuẩn sản xuất (`Data_CoT.md`): Lọc tập Gold Train, sinh lập luận từ API Vision Model (GPT-4o), kèm theo quy tắc QC khắt khe chống hallucination và lặp N-gram.
+- [x] Phân tích rule chấm điểm và format submit chính thức (bbox, type, text; JSON trong cột regions).
+- [x] Xây baseline zero-shot cho Qwen3-VL và xuất submission.
+- [x] Xây script chuẩn bị dữ liệu train/val VLM từ metadata (`prepare_vlm_dataset.py`).
+- [x] Xây notebook Stage 1 silver warm-up (tạo page JSON + crop OCR samples, LoRA/QLoRA, checkpoint + prompt config).
+- [x] Xây notebook Stage 2 gold fine-tune (load Stage 1 adapter, train tiếp trên train split, lưu validation records).
+- [x] Xây notebook inference/submission hai-pass: page JSON -> crop OCR, checkpoint theo GPU, resume từ partial CSV.
+- [x] Xây script fine-tune Qwen3-VL bằng LoRA/QLoRA, có custom callback log và cơ chế phục hồi OOM (`train_qwen_lora.py`).
+- [x] Xây script inference fine-tuned đa GPU, parse JSON output, rescale bbox về ảnh gốc, sort theo thứ tự đọc (`kaggle_finetuned_inference.py`).
+- [x] Xây hậu xử lý spell-check bằng LLM nhỏ để sửa lỗi OCR text (`spell_check_submission.py`).
+- [x] Có tài liệu kế hoạch và nghiên cứu: kế hoạch tổng thể, báo cáo metric, tài liệu CoT/VLM trong thư mục `document/`.
+- [x] Soạn kế hoạch next phase theo hướng cache-first + ablation ladder (data plan + model plan) trong `document/plan/`.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
-
-- **Bug 1: Định dạng và tọa độ Bounding Box** -> **Cách giải quyết:** Các model trả về theo [x1, y1, w, h], đã được quy chuẩn về số nguyên [x1, y1, x2, y2] sử dụng round() chuẩn (Banker's rounding).
-- **Bug 2: Lo lắng về việc sắp xếp Box khi submit** -> **Cách giải quyết:** Xác nhận Kaggle metric tự động sort bbox (y1 trước, x1 sau), chỉ cần tập trung độ chính xác của predictions.
-- **Bug 3: CUDA OOM do phân mảnh VRAM khi train multi-GPU** -> **Cách giải quyết:** Áp dụng `PYTORCH_ALLOC_CONF` và giới hạn `max_memory`.
-- **Bug 4: Crash `NotImplementedError` với Qwen-VL trên T4 GPU** -> **Cách giải quyết:** Ép sử dụng kiểu dữ liệu `Float16` hoặc `Float32` trên toàn bộ model thay vì `BFloat16`.
+- **Bug 1: Sai/không nhất quán định dạng bbox** -> **Cách giải quyết:** Chuẩn hóa quy đổi bbox về [x1, y1, x2, y2], hỗ trợ fallback khi model trả theo pixel hoặc normalized.
+- **Bug 2: Lỗi OOM khi train/inference trên Kaggle T4** -> **Cách giải quyết:** Dùng 4-bit quantization, gradient checkpointing, giới hạn max pixels (page/crop), và dọn cache GPU định kỳ.
+- **Bug 3: Crash do bfloat16 trên môi trường T4** -> **Cách giải quyết:** Ép dtype về float16/float32 cho model và tham số trainable LoRA.
+- **Bug 4: Output model không phải JSON sạch** -> **Cách giải quyết:** Thêm lớp robust parsing (strip code fences, greedy JSON array extract, fallback object regex).
+- **Bug 5: Lệch thứ tự đọc ảnh gây giảm PageCER** -> **Cách giải quyết:** Sort regions theo trục y/x trước khi ghi kết quả.
+- **Bug 6: Khó resume inference khi chạy đa GPU** -> **Cách giải quyết:** Checkpoint theo GPU, merge partial CSV và cho phép resume từ file có sẵn.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
-
-- [ ] Thực thi pipeline Data CoT: Crawl API lấy ~5,000 mẫu reasoning tốt nhất từ dữ liệu chữ viết tay tiếng Ukraina khó đọc (partially_legible / illegible).
-- [ ] Chạy huấn luyện các giai đoạn (Train Phases): Pre-train Silver (dữ liệu bạc), Fine-tune Gold, và đặc biệt là fine-tune bộ dữ liệu CoT để mô hình biết tự đưa ra chain-of-thought trước khi chốt conclusion.
-- [ ] Viết Inference pipeline End-To-End với logic tìm Entropies và Multimodal Chain-of-Thought Fallback.
-- [ ] Tích hợp Post-processing tự sửa lỗi chính tả bằng AI (LLM Spell-check) và hoàn thiện `submission.csv`.
+- [ ] Khóa `frozen_validation_manifest.jsonl` và tạo/kiểm tra `baseline_predictions_cache/` cho B2.
+- [ ] Chạy ablation crop OCR mode (none/smart/all_text) và ghi `ablation_results.csv`.
+- [ ] Tạo `risk_labels_cache.parquet` + routing curve rẻ (rule/entropy/disagreement).
+- [ ] Tạo `refine_candidates.jsonl`, test one-step zoom-only trên subset; chỉ mở reasoning/SFT nếu có gain.
+- [ ] Chuẩn hóa reading-order + post-processing ablation và so sánh PageCER.
+- [ ] Cập nhật checklist validation CSV/JSON parse theo submission contract.
 
 ## 6. 📂 Cấu trúc thư mục cốt lõi (Core Structure)
-
-- `plan_VLM.md` & `Data_CoT.md`: Tài liệu thiết kế kiến trúc toàn cục và chi tiết pipeline tạo data CoT.
-- `dataset/` : Metadata thư mục chứa tập `train`, `test`, `sliver` của cuộc thi Kaggle.
-- `baseline/` : Các đoạn script chạy mẫu zero-shot.
-- `finetune/` : Các mã nguồn để huấn luyện VLM (train_qwen_lora, spell_check_submission).
-- `VLM_OCR/` : Pipeline chia tách và nhận diện, inference pipeline và công cụ định dạng (VD: chuyển JSONL sang CSV).
+- `baseline/`: Baseline zero-shot và kết quả submit tham chiếu.
+- `finetune/`: Notebook Stage 1/2, inference/submission 2-pass, train LoRA, spell-check, kết quả finetune.
+- `VLM_OCR/`: Pipeline OCR theo hướng crop region + VLM và script chuyển đổi định dạng.
+- `dataset/`: Metadata các split (`train`, `test`, `sliver`) và file mẫu submission.
+- `document/`: Tài liệu kế hoạch CoT/VLM, ghi chú thiết kế và paper notes.
+- `document/plan/`: Kế hoạch data/model giai đoạn tiếp theo (cache-first, ablation ladder).
+- `official-evaluation-metric-text-normalization.ipynb`: Notebook chuẩn để bám sát metric/normalization chính thức.
+- `plan.md`, `report.md`, `README.md`: Kế hoạch tổng quan, báo cáo phân tích và mô tả dataset/cuộc thi.
