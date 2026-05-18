@@ -3,11 +3,11 @@
   "artifact_version": "frozen_validation_manifest.v1",
   "status": "pass",
   "pass": true,
-  "created_at": "2026-05-17T17:25:15Z",
+  "created_at": "2026-05-18T10:57:16Z",
   "source_split": {
     "source_split_kind": "deterministic_stage2_split_rebuild",
-    "metadata_path": "/home/nqhuy/Study/Computational Thinking/HandwrittenToData/data/train/metadata.jsonl",
-    "dataset_root": "/home/nqhuy/Study/Computational Thinking/HandwrittenToData/data",
+    "metadata_path": "./data/train/metadata.jsonl",
+    "dataset_root": "./data",
     "split": "train",
     "seed": 42,
     "val_ratio": 0.12,
@@ -139,9 +139,9 @@
     }
   },
   "outputs": {
-    "manifest": "/home/nqhuy/Study/Computational Thinking/HandwrittenToData/Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.jsonl",
-    "config": "/home/nqhuy/Study/Computational Thinking/HandwrittenToData/Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.config.json",
-    "gate_report": "/home/nqhuy/Study/Computational Thinking/HandwrittenToData/Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.gate_report.json"
+    "manifest": "./Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+    "config": "./Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.config.json",
+    "gate_report": "./Handwritten_to_Data_Ukraine/artifacts/manifests/frozen_validation_manifest.v1.gate_report.json"
   },
   "outputs_sha256": {
     "manifest": "d27ac85c0c813cd0ebb43bc5466cfdbb0ec0086481b070310b54748cb079e5c9"
