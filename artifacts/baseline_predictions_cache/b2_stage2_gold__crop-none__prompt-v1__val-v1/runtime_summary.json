@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-05-18T16:44:30Z",
+  "completed_at": "2026-05-18T22:59:59Z",
+  "row_count_manifest": 159,
+  "row_count_predictions": 159,
+  "parse_fail_count": 1,
+  "runtime_total_sec": 22528.23263168335,
+  "model_runtime_sec": 22375.379655838013,
+  "runtime_per_page_sec": 141.68699768354307,
+  "model_runtime_per_generated_page_sec": 140.72565821281768,
+  "cached_prediction_count": 0,
+  "generated_raw_count": 159,
+  "reused_raw_count": 0,
+  "missing_image_count": 0,
+  "inference_error_count": 0
+}

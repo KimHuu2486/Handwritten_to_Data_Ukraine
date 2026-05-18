@@ -1,0 +1,2 @@
+stage,run_id,checkpoint_id,artifact_version,prompt_version,crop_mode,routing_rule,decision,decision_reason,total_score,detection_f1,class_acc,region_cer,page_cer,runtime_per_page_sec,metric_version,created_at
+B2_baseline,b2_stage2_gold__crop-none__prompt-v1__val-v1,b2_stage2_gold,frozen_validation_manifest.v1,prompt-v1,none,none,keep,baseline anchor locked,0.7860404803781254,0.7808241668034807,0.9697224558452481,0.26224961652658973,0.20178876495336442,141.68699768354307,official-compatible-v1,2026-05-18T23:00:26Z
