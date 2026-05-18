@@ -3,3 +3,8 @@ skills-lock.json
 __pycache__/
 .venv/
 scripts/
+qwen3vl_rukopys_lora_final/
+phaseB2/b2_runtime_config.json
+phaseB2/kaggle_metric.py
+artifacts/baseline_predictions_cache/
+artifacts/ablations/

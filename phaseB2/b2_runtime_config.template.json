@@ -1,0 +1,42 @@
+{
+  "run_id": "b2_stage2_gold__crop-none__prompt-v1__val-v1",
+  "checkpoint_id": "b2_stage2_gold",
+  "artifact_version": "frozen_validation_manifest.v1",
+  "prompt_version": "prompt-v1",
+  "metric_version": "official-compatible-v1",
+  "crop_mode": "none",
+  "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
+  "lora_adapter_path": "qwen3vl_rukopys_lora_final",
+  "manifest_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+  "manifest_config_path": "artifacts/manifests/frozen_validation_manifest.v1.config.json",
+  "gate_report_path": "artifacts/manifests/frozen_validation_manifest.v1.gate_report.json",
+  "image_roots": [
+    "/mnt/data/rukopys/train",
+    "/mnt/data/rukopys"
+  ],
+  "output_dir": "artifacts/baseline_predictions_cache/b2_stage2_gold__crop-none__prompt-v1__val-v1",
+  "official_metric_notebook_path": "official-evaluation-metric-text-normalization.ipynb",
+  "model_load": {
+    "device": "cuda:0",
+    "load_in_4bit": true,
+    "torch_dtype": "float16",
+    "bnb_4bit_compute_dtype": "float16",
+    "bnb_4bit_use_double_quant": true,
+    "bnb_4bit_quant_type": "nf4",
+    "attn_implementation": "sdpa",
+    "trust_remote_code": true,
+    "low_cpu_mem_usage": true
+  },
+  "generation_params": {
+    "do_sample": false,
+    "num_beams": 1,
+    "max_new_tokens_page": 4096,
+    "max_new_tokens_crop": 0,
+    "max_pixels_page": 850000,
+    "max_pixels_crop": 0
+  },
+  "runtime": {
+    "checkpoint_every": 5,
+    "fail_on_existing_complete_cache": true
+  }
+}
