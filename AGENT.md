@@ -4,7 +4,7 @@
 - **Muc tieu:** Xay dung pipeline End-to-End Document Understanding cho Kaggle Handwritten to Data (RUKOPYS), dau ra la submission CSV gom bbox + type + text cho tai lieu viet tay tieng Ukraina.
 - **Muc tieu phu:** Chuan bi huong nghien cuu VLM + CoT theo lo trinh cache-first, ablation ladder, routing/refine va hau xu ly.
 - **Trang thai hien tai:** Dang o Phase B2. Frozen validation manifest v1 da pass gate; B2 baseline anchor `b2_stage2_gold__crop-none__prompt-v1__val-v1` da co cache/score va da lock vao `artifacts/ablations/ablation_results.csv`.
-- **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; dang uu tien FP16 + batch inference, hien da tang local VM batch size len 24 de smoke/full-run.
+- **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; user van chon FP16 batch size 24 cho final baseline, chay trong `tmux` voi `--overwrite` va theo doi rui ro OOM.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
 - **Frontend/Client:** Khong co frontend; workflow qua Kaggle Notebook, script Python va VM SSH.
@@ -12,7 +12,8 @@
 - **Database:** Khong dung DB; du lieu o JSONL/CSV.
 - **Thu vien/chay may:** Python, PyTorch, Transformers, TRL/SFTTrainer, PEFT LoRA/QLoRA, bitsandbytes khi can 4-bit fallback, qwen-vl-utils, Hugging Face Hub, PIL, pandas, multiprocessing.
 - **Model chinh:** Qwen3-VL-8B cho detection+transcription end-to-end; Qwen2.5-1.5B-Instruct cho spell-check text hau xu ly.
-- **Runtime B2 tren A6000:** Uu tien FP16 (`load_in_4bit=false`) va batch page generation; batch 24 dang duoc test do VRAM con du, 4-bit chi la fallback khi OOM/GPU nho.
+- **Runtime B2 tren A6000:** Uu tien FP16 (`load_in_4bit=false`) va batch page generation; batch 24 la config dang duoc user tiep tuc chay, nhung VRAM sat tran nen can monitor `nvidia-smi`; 4-bit chi la fallback khi OOM/GPU nho.
+- **VM operation:** Dung `tmux` de giu job khi mat SSH/internet; log baseline ghi qua `tee` vao `logs/`.
 - **Metric:** IoU matching, class accuracy, CER/PageCER, text normalization theo official-compatible metric.
 
 ## 3. ✅ Công việc đã hoàn thành (Completed Tasks)
@@ -31,6 +32,8 @@
 - [x] Cap nhat artifact policy cho Phase B2: dataset, Qwen3-VL base model va `qwen3vl_rukopys_lora_final` la external artifacts; khong commit trong repo.
 - [x] Them runtime diagnostics cho B2 runner: log model load mode, per-image/batch progress, generate start/done, parse ok/fail va smoke flush.
 - [x] Them A6000 FP16 profile va batch inference cho `run_b2_baseline_cache.py`; batch size 2/4/16 smoke da chay duoc, batch 16 dat khoang `1071s/16 pages` nhung phat hien bad case runaway; local VM dang thu batch 24.
+- [x] Cai `tmux` tren VM va chuyen cach chay final baseline sang tmux session `baseline` de job tiep tuc khi mat ket noi.
+- [x] Giam log B2 runner ve cap batch/checkpoint va them cleanup sau batch (`gc.collect()` + `torch.cuda.empty_cache()`) de giam nguy co giu VRAM giua cac batch.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/khong nhat quan bbox format** -> **Fix:** Chuan hoa ve `[x1, y1, x2, y2]`, ho tro normalized, pixel va 0-1000 grid.
@@ -43,9 +46,10 @@
 - **Bug 8: Smoke test nhin nhu treo sau khi load model** -> **Fix:** Them log quanh process vision, processor encode, tensor move va `model.generate`; xac nhan bottleneck la autoregressive generation, khong phai path/model load.
 - **Bug 9: 4-bit tren A6000 khong toi uu toc do** -> **Fix:** Doi B2 VM profile sang FP16 (`load_in_4bit=false`), giu 4-bit la fallback.
 - **Bug 10: Full baseline run bi chan do output cache da ton tai** -> **Fix:** Dung `--resume` de chay tiep tu `validation_predictions.csv`, hoac `--overwrite`/output-dir rieng neu muon chay lai tu dau.
+- **Bug 11: Batch 24 tren A6000 tang VRAM qua tung batch va co lan OOM trong tmux** -> **Fix/Mitigation:** Them cleanup tensor/cache sau batch va giam log noise; hien van chay batch 24 theo quyet dinh user, neu OOM lap lai thi fallback thuc dung la batch 16/12.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
-- [ ] Smoke batch 24 voi output-dir rieng; neu pass thi chay full B2 `.py only` bang batch 24, neu batch keo qua lau/OOM thi giam ve 16/8 va `--resume`.
+- [ ] Chay lai final B2 `.py only` bang batch 24 trong `tmux` voi `--overwrite`; monitor VRAM/log, neu OOM lap lai thi can quyet dinh fallback batch 16/12 hoac resume tu cache hop le.
 - [ ] So sanh runtime/page giua batch size 4, 8, 16, 24; khong mac dinh batch lon nhat vi batch bi keo boi sample dai/runaway.
 - [ ] Them post-process guardrail cho bad cases: loc bbox degenerate/out-of-image, duplicate/repetition text, region count suspicious va raw JSON incomplete flags.
 - [ ] Dieu tra annotation inconsistency `image` vs `graph`: README dinh nghia graph la chart/plot, nhung GT hien co nhieu graph-like regions gan `type=image`; metric phai bam nhan GT thuc te.

@@ -32,9 +32,9 @@ def import_runtime_modules():
     import torch
     from peft import PeftModel
     from qwen_vl_utils import process_vision_info
-    from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+    from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList
 
-    return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+    return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList
 
 
 def dtype_from_name(torch, name: str):
@@ -104,7 +104,7 @@ def cleanup_cuda_memory(torch, device: str, tag: str) -> None:
 
 
 def build_model_and_processor(cfg: dict[str, Any]):
-    torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig = import_runtime_modules()
+    torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList = import_runtime_modules()
     load_cfg = cfg.get("model_load", {})
     base_model_path = str(resolve_project_path(cfg["base_model_path"]))
     adapter_path = str(resolve_project_path(cfg["lora_adapter_path"]))
@@ -141,12 +141,13 @@ def build_model_and_processor(cfg: dict[str, Any]):
 
     processor_source = adapter_path if (Path(adapter_path) / "processor_config.json").exists() else base_model_path
     processor = AutoProcessor.from_pretrained(processor_source, trust_remote_code=True)
-    return torch, process_vision_info, model, processor, device
+    return torch, process_vision_info, LogitsProcessorList, model, processor, device
 
 
 def run_single_image(
     torch,
     process_vision_info,
+    LogitsProcessorList,
     model,
     processor,
     device: str,
@@ -157,6 +158,7 @@ def run_single_image(
     return run_image_batch(
         torch=torch,
         process_vision_info=process_vision_info,
+        LogitsProcessorList=LogitsProcessorList,
         model=model,
         processor=processor,
         device=device,
@@ -169,6 +171,7 @@ def run_single_image(
 def run_image_batch(
     torch,
     process_vision_info,
+    LogitsProcessorList,
     model,
     processor,
     device: str,
@@ -362,7 +365,7 @@ def main() -> int:
     prediction_rows = read_existing_predictions(predictions_path) if args.resume else []
     done_ids = existing_done_ids(predictions_path) if args.resume else set()
 
-    torch, process_vision_info, model, processor, device = build_model_and_processor(cfg)
+    torch, process_vision_info, LogitsProcessorList, model, processor, device = build_model_and_processor(cfg)
 
     started_at = utc_now_iso()
     start_time = time.perf_counter()
@@ -409,6 +412,7 @@ def main() -> int:
                 raw_texts = run_image_batch(
                     torch=torch,
                     process_vision_info=process_vision_info,
+                    LogitsProcessorList=LogitsProcessorList,
                     model=model,
                     processor=processor,
                     device=device,
@@ -437,6 +441,7 @@ def main() -> int:
                         raw_text = run_single_image(
                             torch=torch,
                             process_vision_info=process_vision_info,
+                            LogitsProcessorList=LogitsProcessorList,
                             model=model,
                             processor=processor,
                             device=device,
