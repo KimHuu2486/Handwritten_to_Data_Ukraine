@@ -1,0 +1,110 @@
+{
+  "created_at": "2026-05-19T00:27:19Z",
+  "stage": "Stage C - Risk Labels and Refine Candidates",
+  "risk_version": "risk-v1",
+  "selection_version": "candidate-v1",
+  "source_manifest": "frozen_validation_manifest.v1",
+  "baseline_run_id": "b2_stage2_gold__crop-none__prompt-v1__val-v1",
+  "checkpoint_id": "b2_stage2_gold",
+  "prompt_version": "prompt-v1",
+  "manifest_row_count": 159,
+  "prediction_row_count": 159,
+  "gt_region_count": 3129,
+  "risk_row_count": 3713,
+  "ground_truth_risk_row_count": 3129,
+  "false_positive_risk_row_count": 584,
+  "candidate_count": 635,
+  "baseline_score": {
+    "total_score": 0.7860404803781254,
+    "detection_f1": 0.7808241668034807,
+    "class_acc": 0.9697224558452481,
+    "region_cer": 0.26224961652658973,
+    "page_cer": 0.20178876495336442,
+    "parse_fail_count": 1
+  },
+  "match_stats": {
+    "matched_gt_regions": 2378,
+    "missed_gt_regions": 751,
+    "false_positive_regions": 584
+  },
+  "risk_distribution": {
+    "risky": 1436,
+    "catastrophic": 1341,
+    "safe": 936
+  },
+  "risk_by_source": {
+    "school/risky": 728,
+    "dictation/catastrophic": 550,
+    "school/safe": 442,
+    "dictation/safe": 394,
+    "school/catastrophic": 375,
+    "dictation/risky": 267,
+    "university/catastrophic": 252,
+    "university/risky": 236,
+    "archive/risky": 205,
+    "archive/catastrophic": 164,
+    "university/safe": 71,
+    "archive/safe": 29
+  },
+  "risk_by_type": {
+    "handwritten/risky": 1133,
+    "handwritten/catastrophic": 1107,
+    "handwritten/safe": 843,
+    "formula/risky": 261,
+    "formula/catastrophic": 151,
+    "formula/safe": 91,
+    "annotation/catastrophic": 37,
+    "printed/catastrophic": 36,
+    "image/risky": 20,
+    "annotation/risky": 15,
+    "table/catastrophic": 10,
+    "printed/risky": 6,
+    "annotation/safe": 2,
+    "graph/risky": 1
+  },
+  "top_failure_tags": {
+    "high_cer": 1740,
+    "source_specific_error": 1148,
+    "very_high_cer": 1061,
+    "missed_detection": 751,
+    "empty_prediction": 727,
+    "false_positive": 584,
+    "minor_cer": 399,
+    "hallucination_long": 269,
+    "invalid_region_type": 72,
+    "repetition": 26,
+    "missed_non_text_region": 20,
+    "too_short": 18,
+    "malformed_json": 13,
+    "too_long": 1
+  },
+  "candidate_by_priority": {
+    "P0": 500,
+    "P2": 100,
+    "P1": 35
+  },
+  "candidate_by_source": {
+    "dictation": 242,
+    "school": 209,
+    "university": 136,
+    "archive": 48
+  },
+  "candidate_by_type": {
+    "handwritten": 489,
+    "formula": 91,
+    "printed": 32,
+    "annotation": 14,
+    "table": 9
+  },
+  "pass_gate": {
+    "all_gt_regions_have_risk_rows": true,
+    "risk_rows_have_cer_or_reason": true,
+    "thresholds_recorded_in_config": true,
+    "candidate_ids_unique": true,
+    "candidates_join_risk_labels": true,
+    "candidate_bboxes_valid": true,
+    "candidate_exact_matches_excluded": true
+  },
+  "parquet_written": true,
+  "parquet_error": null
+}
