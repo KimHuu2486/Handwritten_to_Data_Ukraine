@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import time
 import traceback
@@ -32,9 +31,9 @@ def import_runtime_modules():
     import torch
     from peft import PeftModel
     from qwen_vl_utils import process_vision_info
-    from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList
+    from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
-    return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList
+    return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 
 def dtype_from_name(torch, name: str):
@@ -48,63 +47,8 @@ def dtype_from_name(torch, name: str):
     raise ValueError(f"Unsupported torch dtype: {name}")
 
 
-def cuda_device_index(torch, device: str) -> int | None:
-    if not torch.cuda.is_available():
-        return None
-    device_text = str(device)
-    if device_text == "auto":
-        return torch.cuda.current_device()
-    if device_text == "cuda":
-        return torch.cuda.current_device()
-    if device_text.startswith("cuda:"):
-        try:
-            return int(device_text.split(":", 1)[1])
-        except ValueError:
-            return torch.cuda.current_device()
-    return None
-
-
-def log_cuda_memory(torch, device: str, tag: str) -> None:
-    device_index = cuda_device_index(torch, device)
-    if device_index is None:
-        return
-    try:
-        torch.cuda.synchronize(device_index)
-    except Exception:
-        pass
-
-    gib = 1024**3
-    allocated = torch.cuda.memory_allocated(device_index) / gib
-    reserved = torch.cuda.memory_reserved(device_index) / gib
-    max_allocated = torch.cuda.max_memory_allocated(device_index) / gib
-    try:
-        free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
-        free = free_bytes / gib
-        total = total_bytes / gib
-        free_text = f" free={free:.2f}GB total={total:.2f}GB"
-    except Exception:
-        free_text = ""
-
-    print(
-        "[cuda] "
-        f"{tag} "
-        f"allocated={allocated:.2f}GB "
-        f"reserved={reserved:.2f}GB "
-        f"max_allocated={max_allocated:.2f}GB"
-        f"{free_text}",
-        flush=True,
-    )
-
-
-def cleanup_cuda_memory(torch, device: str, tag: str) -> None:
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        log_cuda_memory(torch, device, tag)
-
-
 def build_model_and_processor(cfg: dict[str, Any]):
-    torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig, LogitsProcessorList = import_runtime_modules()
+    torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig = import_runtime_modules()
     load_cfg = cfg.get("model_load", {})
     base_model_path = str(resolve_project_path(cfg["base_model_path"]))
     adapter_path = str(resolve_project_path(cfg["lora_adapter_path"]))
@@ -141,13 +85,12 @@ def build_model_and_processor(cfg: dict[str, Any]):
 
     processor_source = adapter_path if (Path(adapter_path) / "processor_config.json").exists() else base_model_path
     processor = AutoProcessor.from_pretrained(processor_source, trust_remote_code=True)
-    return torch, process_vision_info, LogitsProcessorList, model, processor, device
+    return torch, process_vision_info, model, processor, device
 
 
 def run_single_image(
     torch,
     process_vision_info,
-    LogitsProcessorList,
     model,
     processor,
     device: str,
@@ -158,7 +101,6 @@ def run_single_image(
     return run_image_batch(
         torch=torch,
         process_vision_info=process_vision_info,
-        LogitsProcessorList=LogitsProcessorList,
         model=model,
         processor=processor,
         device=device,
@@ -171,7 +113,6 @@ def run_single_image(
 def run_image_batch(
     torch,
     process_vision_info,
-    LogitsProcessorList,
     model,
     processor,
     device: str,
@@ -179,7 +120,6 @@ def run_image_batch(
     prompt_text: str,
     generation_params: dict[str, Any],
 ) -> list[str]:
-    log_cuda_memory(torch, device, f"batch_start size={len(image_paths)}")
     print(f"  build messages batch_size={len(image_paths)}", flush=True)
     messages_batch = []
     for image_path in image_paths:
@@ -199,88 +139,66 @@ def run_image_batch(
             ]
         )
 
-    text_prompts = None
-    image_inputs = None
-    video_inputs = None
-    inputs = None
-    generated_ids = None
-    generated_ids_trimmed = None
-    try:
-        text_prompts = []
-        for messages in messages_batch:
-            try:
-                text_prompts.append(
-                    processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-                )
-            except TypeError:
-                text_prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
+    text_prompts = []
+    for messages in messages_batch:
+        try:
+            text_prompts.append(
+                processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+            )
+        except TypeError:
+            text_prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
 
-        print("  process vision info", flush=True)
-        image_inputs, video_inputs = process_vision_info(messages_batch)
-        log_cuda_memory(torch, device, "after_process_vision_info")
-        print("  processor encode", flush=True)
-        if getattr(processor, "tokenizer", None) is not None:
-            processor.tokenizer.padding_side = "left"
-        inputs = processor(
-            text=text_prompts,
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        )
-        log_cuda_memory(torch, device, "after_processor_encode_cpu")
-        if device != "auto":
-            print(f"  move tensors to {device}", flush=True)
-            inputs = inputs.to(device)
-        log_cuda_memory(torch, device, "after_inputs_to_device")
+    print("  process vision info", flush=True)
+    image_inputs, video_inputs = process_vision_info(messages_batch)
+    print("  processor encode", flush=True)
+    if getattr(processor, "tokenizer", None) is not None:
+        processor.tokenizer.padding_side = "left"
+    inputs = processor(
+        text=text_prompts,
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    if device != "auto":
+        print(f"  move tensors to {device}", flush=True)
+        inputs = inputs.to(device)
 
-        generate_kwargs = {
-            "max_new_tokens": int(generation_params["max_new_tokens_page"]),
-            "do_sample": bool(generation_params["do_sample"]),
-            "num_beams": int(generation_params["num_beams"]),
-        }
-        input_token_count = int(inputs.input_ids.shape[-1]) if hasattr(inputs, "input_ids") else -1
-        print(
-            "  generate start "
-            f"batch_size={len(image_paths)} "
-            f"input_tokens={input_token_count} "
-            f"max_new_tokens={generate_kwargs['max_new_tokens']} "
-            f"do_sample={generate_kwargs['do_sample']} "
-            f"num_beams={generate_kwargs['num_beams']}",
-            flush=True,
-        )
-        if torch.cuda.is_available():
-            device_index = cuda_device_index(torch, device)
-            if device_index is not None:
-                torch.cuda.reset_peak_memory_stats(device_index)
-        log_cuda_memory(torch, device, "before_generate")
-        generate_start = time.perf_counter()
-        with torch.inference_mode():
-            generated_ids = model.generate(**inputs, **generate_kwargs)
-        generate_sec = time.perf_counter() - generate_start
-        log_cuda_memory(torch, device, "after_generate")
-        output_token_count = int(generated_ids.shape[-1] - inputs.input_ids.shape[-1])
-        print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens_max={output_token_count}", flush=True)
+    generate_kwargs = {
+        "max_new_tokens": int(generation_params["max_new_tokens_page"]),
+        "do_sample": bool(generation_params["do_sample"]),
+        "num_beams": int(generation_params["num_beams"]),
+    }
+    input_token_count = int(inputs.input_ids.shape[-1]) if hasattr(inputs, "input_ids") else -1
+    print(
+        "  generate start "
+        f"batch_size={len(image_paths)} "
+        f"input_tokens={input_token_count} "
+        f"max_new_tokens={generate_kwargs['max_new_tokens']} "
+        f"do_sample={generate_kwargs['do_sample']} "
+        f"num_beams={generate_kwargs['num_beams']}",
+        flush=True,
+    )
+    generate_start = time.perf_counter()
+    with torch.no_grad():
+        generated_ids = model.generate(**inputs, **generate_kwargs)
+    generate_sec = time.perf_counter() - generate_start
+    output_token_count = int(generated_ids.shape[-1] - inputs.input_ids.shape[-1])
+    print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens_max={output_token_count}", flush=True)
 
-        generated_ids_trimmed = [
-            out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-        ]
-        print("  decode output", flush=True)
-        output_texts = processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-        return output_texts
-    finally:
-        del generated_ids_trimmed
-        del generated_ids
-        del inputs
-        del video_inputs
-        del image_inputs
-        del text_prompts
-        del messages_batch
-        cleanup_cuda_memory(torch, device, "after_batch_cleanup")
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    print("  decode output", flush=True)
+    output_texts = processor.batch_decode(
+        generated_ids_trimmed,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+    )
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return output_texts
 
 
 def existing_done_ids(predictions_path: Path) -> set[str]:
@@ -365,7 +283,7 @@ def main() -> int:
     prediction_rows = read_existing_predictions(predictions_path) if args.resume else []
     done_ids = existing_done_ids(predictions_path) if args.resume else set()
 
-    torch, process_vision_info, LogitsProcessorList, model, processor, device = build_model_and_processor(cfg)
+    torch, process_vision_info, model, processor, device = build_model_and_processor(cfg)
 
     started_at = utc_now_iso()
     start_time = time.perf_counter()
@@ -412,7 +330,6 @@ def main() -> int:
                 raw_texts = run_image_batch(
                     torch=torch,
                     process_vision_info=process_vision_info,
-                    LogitsProcessorList=LogitsProcessorList,
                     model=model,
                     processor=processor,
                     device=device,
@@ -441,7 +358,6 @@ def main() -> int:
                         raw_text = run_single_image(
                             torch=torch,
                             process_vision_info=process_vision_info,
-                            LogitsProcessorList=LogitsProcessorList,
                             model=model,
                             processor=processor,
                             device=device,

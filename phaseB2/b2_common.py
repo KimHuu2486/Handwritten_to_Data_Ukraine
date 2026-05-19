@@ -123,12 +123,6 @@ def load_runtime_config(path: Path) -> dict[str, Any]:
     cfg["generation_params"].setdefault("max_new_tokens_crop", 0)
     cfg["generation_params"].setdefault("max_pixels_page", 850000)
     cfg["generation_params"].setdefault("max_pixels_crop", 0)
-    repetition_stop = cfg["generation_params"].setdefault("repetition_eos_stop", {})
-    repetition_stop.setdefault("enabled", True)
-    repetition_stop.setdefault("min_new_tokens", 512)
-    repetition_stop.setdefault("ngram_size", 32)
-    repetition_stop.setdefault("repeat_count", 4)
-    repetition_stop.setdefault("check_interval", 32)
     return cfg
 
 
