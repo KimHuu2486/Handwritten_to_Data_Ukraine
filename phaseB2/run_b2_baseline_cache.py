@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import time
 import traceback
@@ -32,7 +33,9 @@ def import_runtime_modules():
     from peft import PeftModel
     from qwen_vl_utils import process_vision_info
     from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
+    from transformers.utils import logging as transformers_logging
 
+    transformers_logging.set_verbosity_error()
     return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 
@@ -45,6 +48,12 @@ def dtype_from_name(torch, name: str):
     if lowered in ("float32", "fp32"):
         return torch.float32
     raise ValueError(f"Unsupported torch dtype: {name}")
+
+
+def cleanup_runtime_memory(torch) -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def build_model_and_processor(cfg: dict[str, Any]):
@@ -120,8 +129,12 @@ def run_image_batch(
     prompt_text: str,
     generation_params: dict[str, Any],
 ) -> list[str]:
-    print(f"  build messages batch_size={len(image_paths)}", flush=True)
     messages_batch = []
+    image_inputs = None
+    video_inputs = None
+    inputs = None
+    generated_ids = None
+    generated_ids_trimmed = None
     for image_path in image_paths:
         messages_batch.append(
             [
@@ -148,57 +161,43 @@ def run_image_batch(
         except TypeError:
             text_prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
 
-    print("  process vision info", flush=True)
-    image_inputs, video_inputs = process_vision_info(messages_batch)
-    print("  processor encode", flush=True)
-    if getattr(processor, "tokenizer", None) is not None:
-        processor.tokenizer.padding_side = "left"
-    inputs = processor(
-        text=text_prompts,
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
-    if device != "auto":
-        print(f"  move tensors to {device}", flush=True)
-        inputs = inputs.to(device)
+    try:
+        image_inputs, video_inputs = process_vision_info(messages_batch)
+        if getattr(processor, "tokenizer", None) is not None:
+            processor.tokenizer.padding_side = "left"
+        inputs = processor(
+            text=text_prompts,
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        if device != "auto":
+            inputs = inputs.to(device)
 
-    generate_kwargs = {
-        "max_new_tokens": int(generation_params["max_new_tokens_page"]),
-        "do_sample": bool(generation_params["do_sample"]),
-        "num_beams": int(generation_params["num_beams"]),
-    }
-    input_token_count = int(inputs.input_ids.shape[-1]) if hasattr(inputs, "input_ids") else -1
-    print(
-        "  generate start "
-        f"batch_size={len(image_paths)} "
-        f"input_tokens={input_token_count} "
-        f"max_new_tokens={generate_kwargs['max_new_tokens']} "
-        f"do_sample={generate_kwargs['do_sample']} "
-        f"num_beams={generate_kwargs['num_beams']}",
-        flush=True,
-    )
-    generate_start = time.perf_counter()
-    with torch.no_grad():
-        generated_ids = model.generate(**inputs, **generate_kwargs)
-    generate_sec = time.perf_counter() - generate_start
-    output_token_count = int(generated_ids.shape[-1] - inputs.input_ids.shape[-1])
-    print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens_max={output_token_count}", flush=True)
+        generate_kwargs = {
+            "max_new_tokens": int(generation_params["max_new_tokens_page"]),
+            "do_sample": bool(generation_params["do_sample"]),
+            "num_beams": int(generation_params["num_beams"]),
+        }
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs, **generate_kwargs)
 
-    generated_ids_trimmed = [
-        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    print("  decode output", flush=True)
-    output_texts = processor.batch_decode(
-        generated_ids_trimmed,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False,
-    )
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return output_texts
+        generated_ids_trimmed = [
+            out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        return processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+    finally:
+        generated_ids_trimmed = None
+        generated_ids = None
+        inputs = None
+        image_inputs = None
+        video_inputs = None
+        cleanup_runtime_memory(torch)
 
 
 def existing_done_ids(predictions_path: Path) -> set[str]:
@@ -299,18 +298,28 @@ def main() -> int:
         else:
             pending_rows.append((index, row))
 
+    total_batches = (len(pending_rows) + inference_batch_size - 1) // inference_batch_size
+    print(
+        f"pending rows={len(pending_rows)}/{len(manifest_rows)} "
+        f"batch_size={inference_batch_size} batches={total_batches}",
+        flush=True,
+    )
+
     for batch_start in range(0, len(pending_rows), inference_batch_size):
+        batch_number = (batch_start // inference_batch_size) + 1
         batch_items = pending_rows[batch_start : batch_start + inference_batch_size]
+        batch_timer = time.perf_counter()
         valid_items = []
         prepared_results: dict[int, dict[str, Any]] = {}
+        batch_parse_fail_count = 0
+
+        print(f"batch {batch_number}/{total_batches}: size={len(batch_items)} start", flush=True)
 
         for index, row in batch_items:
             raw_output_id = f"raw_{index:06d}"
             row_start = time.perf_counter()
             try:
-                print(f"[{index + 1}/{len(manifest_rows)}] start image_id={row['image_id']}", flush=True)
                 image_path = resolve_image_path(row, cfg.get("image_roots", []))
-                print(f"[{index + 1}/{len(manifest_rows)}] resolved image_path={image_path}", flush=True)
                 valid_items.append((index, row, image_path, raw_output_id, row_start))
             except Exception as exc:
                 prepared_results[index] = {
@@ -326,7 +335,6 @@ def main() -> int:
         if valid_items:
             image_paths = [item[2] for item in valid_items]
             try:
-                print(f"batch generate: size={len(valid_items)}", flush=True)
                 raw_texts = run_image_batch(
                     torch=torch,
                     process_vision_info=process_vision_info,
@@ -350,9 +358,12 @@ def main() -> int:
                     }
             except Exception:
                 if len(valid_items) > 1:
-                    print("batch generate failed; falling back to single-image generate", flush=True)
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                    print(
+                        f"batch {batch_number}/{total_batches}: size={len(valid_items)} "
+                        "failed; fallback single-image",
+                        flush=True,
+                    )
+                cleanup_runtime_memory(torch)
                 for index, row, image_path, raw_output_id, row_start in valid_items:
                     try:
                         raw_text = run_single_image(
@@ -395,12 +406,10 @@ def main() -> int:
             error_type = str(result["error_type"])
 
             if parse_ok:
-                print(f"[{index + 1}/{len(manifest_rows)}] parse raw output chars={len(raw_text)}", flush=True)
                 raw_regions, parse_error = extract_json_from_response(raw_text)
                 if parse_error:
                     parse_ok = False
                     error_type = parse_error
-                    print(f"[{index + 1}/{len(manifest_rows)}] parse fail error_type={error_type}", flush=True)
                 else:
                     regions, normalize_error = normalize_regions(
                         raw_regions,
@@ -411,14 +420,8 @@ def main() -> int:
                     if normalize_error:
                         parse_ok = False
                         error_type = normalize_error
-                        print(f"[{index + 1}/{len(manifest_rows)}] normalize fail error_type={error_type}", flush=True)
-                    else:
-                        print(f"[{index + 1}/{len(manifest_rows)}] parse ok regions={len(regions)}", flush=True)
-            else:
-                print(f"[{index + 1}/{len(manifest_rows)}] exception error_type={error_type}", flush=True)
 
             runtime_sec = time.perf_counter() - row_start
-            print(f"[{index + 1}/{len(manifest_rows)}] row done runtime_sec={runtime_sec:.2f} parse_ok={parse_ok}", flush=True)
             append_jsonl(
                 raw_outputs_path,
                 {
@@ -434,6 +437,7 @@ def main() -> int:
 
             if not parse_ok:
                 parse_fail_count += 1
+                batch_parse_fail_count += 1
                 append_jsonl(
                     failed_rows_path,
                     {
@@ -466,6 +470,14 @@ def main() -> int:
             elif flush_every_row:
                 write_predictions_csv(predictions_path, prediction_rows)
                 print(f"smoke flush: {len(prediction_rows)}/{len(manifest_rows)} rows", flush=True)
+
+        cleanup_runtime_memory(torch)
+        print(
+            f"batch {batch_number}/{total_batches}: size={len(batch_items)} "
+            f"done runtime_sec={time.perf_counter() - batch_timer:.2f} "
+            f"parse_fail={batch_parse_fail_count} rows_done={len(prediction_rows)}/{len(manifest_rows)}",
+            flush=True,
+        )
 
     write_predictions_csv(predictions_path, prediction_rows)
 
