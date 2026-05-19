@@ -96,6 +96,7 @@ def run_single_image(
     prompt_text: str,
     generation_params: dict[str, Any],
 ) -> str:
+    print("  build messages", flush=True)
     messages = [
         {
             "role": "user",
@@ -115,7 +116,9 @@ def run_single_image(
     except TypeError:
         text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
+    print("  process vision info", flush=True)
     image_inputs, video_inputs = process_vision_info(messages)
+    print("  processor encode", flush=True)
     inputs = processor(
         text=[text_prompt],
         images=image_inputs,
@@ -124,6 +127,7 @@ def run_single_image(
         return_tensors="pt",
     )
     if device != "auto":
+        print(f"  move tensors to {device}", flush=True)
         inputs = inputs.to(device)
 
     generate_kwargs = {
@@ -131,12 +135,26 @@ def run_single_image(
         "do_sample": bool(generation_params["do_sample"]),
         "num_beams": int(generation_params["num_beams"]),
     }
+    input_token_count = int(inputs.input_ids.shape[-1]) if hasattr(inputs, "input_ids") else -1
+    print(
+        "  generate start "
+        f"input_tokens={input_token_count} "
+        f"max_new_tokens={generate_kwargs['max_new_tokens']} "
+        f"do_sample={generate_kwargs['do_sample']} "
+        f"num_beams={generate_kwargs['num_beams']}",
+        flush=True,
+    )
+    generate_start = time.perf_counter()
     with torch.no_grad():
         generated_ids = model.generate(**inputs, **generate_kwargs)
+    generate_sec = time.perf_counter() - generate_start
+    output_token_count = int(generated_ids.shape[-1] - inputs.input_ids.shape[-1])
+    print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens={output_token_count}", flush=True)
 
     generated_ids_trimmed = [
         out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
+    print("  decode output", flush=True)
     output_text = processor.batch_decode(
         generated_ids_trimmed,
         skip_special_tokens=True,
@@ -236,10 +254,12 @@ def main() -> int:
     start_time = time.perf_counter()
     parse_fail_count = sum(1 for row in prediction_rows if str(row.get("parse_ok")).lower() != "true")
     checkpoint_every = int(cfg.get("runtime", {}).get("checkpoint_every", 5))
+    flush_every_row = args.limit is not None and args.limit <= checkpoint_every
 
     for index, row in enumerate(manifest_rows):
         image_id = str(row["image_id"])
         if image_id in done_ids:
+            print(f"[{index + 1}/{len(manifest_rows)}] skip cached image_id={image_id}", flush=True)
             continue
 
         raw_output_id = f"raw_{index:06d}"
@@ -250,7 +270,9 @@ def main() -> int:
         regions: list[dict[str, Any]] = []
 
         try:
+            print(f"[{index + 1}/{len(manifest_rows)}] start image_id={image_id}", flush=True)
             image_path = resolve_image_path(row, cfg.get("image_roots", []))
+            print(f"[{index + 1}/{len(manifest_rows)}] resolved image_path={image_path}", flush=True)
             raw_text = run_single_image(
                 torch=torch,
                 process_vision_info=process_vision_info,
@@ -261,10 +283,12 @@ def main() -> int:
                 prompt_text=prompt_text,
                 generation_params=cfg["generation_params"],
             )
+            print(f"[{index + 1}/{len(manifest_rows)}] parse raw output chars={len(raw_text)}", flush=True)
             raw_regions, parse_error = extract_json_from_response(raw_text)
             if parse_error:
                 parse_ok = False
                 error_type = parse_error
+                print(f"[{index + 1}/{len(manifest_rows)}] parse fail error_type={error_type}", flush=True)
             else:
                 regions, normalize_error = normalize_regions(
                     raw_regions,
@@ -275,12 +299,17 @@ def main() -> int:
                 if normalize_error:
                     parse_ok = False
                     error_type = normalize_error
+                    print(f"[{index + 1}/{len(manifest_rows)}] normalize fail error_type={error_type}", flush=True)
+                else:
+                    print(f"[{index + 1}/{len(manifest_rows)}] parse ok regions={len(regions)}", flush=True)
         except Exception as exc:
             parse_ok = False
             error_type = type(exc).__name__
             raw_text = raw_text or traceback.format_exc()
+            print(f"[{index + 1}/{len(manifest_rows)}] exception error_type={error_type}", flush=True)
 
         runtime_sec = time.perf_counter() - row_start
+        print(f"[{index + 1}/{len(manifest_rows)}] row done runtime_sec={runtime_sec:.2f} parse_ok={parse_ok}", flush=True)
         append_jsonl(
             raw_outputs_path,
             {
@@ -325,6 +354,9 @@ def main() -> int:
         if len(prediction_rows) % checkpoint_every == 0:
             write_predictions_csv(predictions_path, prediction_rows)
             print(f"checkpoint: {len(prediction_rows)}/{len(manifest_rows)} rows")
+        elif flush_every_row:
+            write_predictions_csv(predictions_path, prediction_rows)
+            print(f"smoke flush: {len(prediction_rows)}/{len(manifest_rows)} rows", flush=True)
 
     write_predictions_csv(predictions_path, prediction_rows)
 
