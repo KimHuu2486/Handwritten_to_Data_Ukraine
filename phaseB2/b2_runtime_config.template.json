@@ -6,7 +6,7 @@
   "metric_version": "official-compatible-v1",
   "crop_mode": "none",
   "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
-  "lora_adapter_path": "qwen3vl_rukopys_lora_final",
+  "lora_adapter_path": "/mnt/models/qwen3vl_rukopys_lora_final",
   "manifest_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
   "manifest_config_path": "artifacts/manifests/frozen_validation_manifest.v1.config.json",
   "gate_report_path": "artifacts/manifests/frozen_validation_manifest.v1.gate_report.json",

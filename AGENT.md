@@ -3,13 +3,13 @@
 ## 1. 🎯 Tóm tắt dự án (Project Overview)
 - **Mục tiêu:** Xây dựng pipeline End-to-End Document Understanding cho cuộc thi Kaggle Handwritten to Data (RUKOPYS), đầu ra là submission CSV gồm bbox + type + text cho tài liệu viết tay tiếng Ukraina.
 - **Mục tiêu phụ:** Chuẩn bị hướng nghiên cứu VLM + CoT (Curriculum Silver -> Gold -> CoT + hậu xử lý) theo lộ trình ablation và cache-first.
-- **Trạng thái hiện tại:** Đang phát triển. Đã có notebook Stage 1 (silver warm-up) và Stage 2 (gold fine-tune), cùng notebook inference/submission hai-pass (page JSON + crop OCR). Đang khóa B2 baseline, chuẩn bị ablation theo data/model plan giai đoạn tiếp theo.
+- **Trạng thái hiện tại:** Đang phát triển. Đã có notebook Stage 1 (silver warm-up), Stage 2 (gold fine-tune), frozen validation manifest v1 và runner `.py only` cho B2 baseline cache trong `phaseB2/`.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
 - **Frontend/Client:** Không có frontend; workflow chủ yếu qua Kaggle Notebook + script Python.
 - **Backend/Server:** Không có server riêng; pipeline batch offline.
 - **Database:** Không dùng DB; dữ liệu ở JSONL/CSV.
-- **Công cụ/Thư viện khác:** Python, PyTorch, Transformers, TRL (SFTTrainer), PEFT (LoRA/QLoRA), bitsandbytes, qwen-vl-utils, PIL, pandas, multiprocessing.
+- **Công cụ/Thư viện khác:** Python, PyTorch, Transformers, TRL (SFTTrainer), PEFT (LoRA/QLoRA), bitsandbytes, qwen-vl-utils, Hugging Face Hub, PIL, pandas, multiprocessing.
 - **Mô hình chính:** Qwen3-VL-8B (detection+transcription end-to-end), Qwen2.5-1.5B-Instruct (spell-check text hậu xử lý).
 - **Metric/chuẩn đánh giá:** IoU matching, class accuracy, CER/PageCER, text normalization theo rule chính thức.
 
@@ -25,6 +25,8 @@
 - [x] Xây hậu xử lý spell-check bằng LLM nhỏ để sửa lỗi OCR text (`spell_check_submission.py`).
 - [x] Có tài liệu kế hoạch và nghiên cứu: kế hoạch tổng thể, báo cáo metric, tài liệu CoT/VLM trong thư mục `document/`.
 - [x] Soạn kế hoạch next phase theo hướng cache-first + ablation ladder (data plan + model plan) trong `document/plan/`.
+- [x] Tạo `phaseB2/` cho B2 baseline `.py only`: readiness checker, config template, parser/normalizer, metric adapter và cache writer.
+- [x] Chốt artifact policy: base model, dataset và LoRA adapter lưu ngoài Git repo; repo chỉ giữ code, manifest và runner.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/không nhất quán định dạng bbox** -> **Cách giải quyết:** Chuẩn hóa quy đổi bbox về [x1, y1, x2, y2], hỗ trợ fallback khi model trả theo pixel hoặc normalized.
@@ -33,9 +35,11 @@
 - **Bug 4: Output model không phải JSON sạch** -> **Cách giải quyết:** Thêm lớp robust parsing (strip code fences, greedy JSON array extract, fallback object regex).
 - **Bug 5: Lệch thứ tự đọc ảnh gây giảm PageCER** -> **Cách giải quyết:** Sort regions theo trục y/x trước khi ghi kết quả.
 - **Bug 6: Khó resume inference khi chạy đa GPU** -> **Cách giải quyết:** Checkpoint theo GPU, merge partial CSV và cho phép resume từ file có sẵn.
+- **Bug 7: GitHub từ chối push do LoRA `adapter_model.safetensors` vượt 100MB** -> **Cách giải quyết:** Gỡ tracking `qwen3vl_rukopys_lora_final/`, thêm `.gitignore`, lưu adapter trên Hugging Face/cloud và tải về khi setup VM.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
-- [ ] Khóa `frozen_validation_manifest.jsonl` và tạo/kiểm tra `baseline_predictions_cache/` cho B2.
+- [ ] Chạy B2 baseline cache bằng `phaseB2/run_b2_baseline_cache.py` sau khi runtime pass readiness.
+- [ ] Ghi dòng B2 baseline đầu tiên vào `artifacts/ablations/ablation_results.csv` sau khi cache pass.
 - [ ] Chạy ablation crop OCR mode (none/smart/all_text) và ghi `ablation_results.csv`.
 - [ ] Tạo `risk_labels_cache.parquet` + routing curve rẻ (rule/entropy/disagreement).
 - [ ] Tạo `refine_candidates.jsonl`, test one-step zoom-only trên subset; chỉ mở reasoning/SFT nếu có gain.
@@ -46,6 +50,7 @@
 - `baseline/`: Baseline zero-shot và kết quả submit tham chiếu.
 - `finetune/`: Notebook Stage 1/2, inference/submission 2-pass, train LoRA, spell-check, kết quả finetune.
 - `VLM_OCR/`: Pipeline OCR theo hướng crop region + VLM và script chuyển đổi định dạng.
+- `phaseB2/`: Runner `.py only` cho B2 baseline cache, readiness check, config template và metric/cache helpers.
 - `dataset/`: Metadata các split (`train`, `test`, `sliver`) và file mẫu submission.
 - `document/`: Tài liệu kế hoạch CoT/VLM, ghi chú thiết kế và paper notes.
 - `document/plan/`: Kế hoạch data/model giai đoạn tiếp theo (cache-first, ablation ladder).

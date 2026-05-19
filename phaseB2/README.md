@@ -24,7 +24,7 @@ Disk 100GB có thể chạy được nhưng hơi sát vì cần chứa dataset, 
 
 ## 2. Cấu trúc thư mục chuẩn
 
-Repo code nằm trong `/workspace`. Model và dataset nằm ngoài repo trong `/mnt`.
+Repo code nằm trong `/workspace`. Dataset, base model và LoRA adapter nằm ngoài repo trong `/mnt`.
 
 ```text
 /workspace/Handwritten_to_Data_Ukraine/
@@ -34,13 +34,13 @@ Repo code nằm trong `/workspace`. Model và dataset nằm ngoài repo trong `/
       frozen_validation_manifest.v1.jsonl
       frozen_validation_manifest.v1.config.json
       frozen_validation_manifest.v1.gate_report.json
+
+/mnt/models/
+  Qwen3-VL-8B-Instruct/
   qwen3vl_rukopys_lora_final/
     adapter_config.json
     adapter_model.safetensors
     rukopys_prompt_config.json
-
-/mnt/models/
-  Qwen3-VL-8B-Instruct/
 
 /mnt/data/
   rukopys/
@@ -62,7 +62,21 @@ Manifest validation dùng ảnh từ:
 /mnt/data/rukopys/train/images/{uuid}.jpg
 ```
 
-## 3. Chuẩn bị repo trên VM
+## 3. Artifact policy
+
+Repo chỉ giữ code, manifest, config template và output metadata/cache nhỏ. Không commit dataset, base model Qwen3-VL hoặc LoRA adapter B2 vào repo.
+
+Các artifact nặng phải nằm ngoài repo:
+
+```text
+/mnt/data/rukopys/
+/mnt/models/Qwen3-VL-8B-Instruct/
+/mnt/models/qwen3vl_rukopys_lora_final/
+```
+
+`qwen3vl_rukopys_lora_final` được tải từ Hugging Face giống như dataset và base model. Sau khi tải xong, `lora_adapter_path` trong runtime config phải trỏ tới thư mục adapter ngoài repo.
+
+## 4. Chuẩn bị repo trên VM
 
 Sau khi tạo VM, vào thư mục làm việc:
 
@@ -77,13 +91,12 @@ Sau khi clone, kiểm tra repo có các mục sau:
 ```text
 phaseB2/
 artifacts/manifests/
-qwen3vl_rukopys_lora_final/
 official-evaluation-metric-text-normalization.ipynb
 ```
 
-Nếu `qwen3vl_rukopys_lora_final/` chưa nằm trong repo sau khi clone, copy folder đó vào repo root.
+Không copy `qwen3vl_rukopys_lora_final/` vào repo root. Tải adapter từ Hugging Face vào `/mnt/models/qwen3vl_rukopys_lora_final`.
 
-## 4. Tải dataset RUKOPYS
+## 5. Tải dataset RUKOPYS
 
 Tải Hugging Face dataset `UkrainianCatholicUniversity/rukopys` và giữ nguyên cấu trúc:
 
@@ -107,7 +120,7 @@ Vì vậy checker sẽ resolve thành:
 /mnt/data/rukopys/train/images/<uuid>.jpg
 ```
 
-## 5. Tải Qwen3-VL base model
+## 6. Tải Qwen3-VL base model
 
 Tải model `Qwen/Qwen3-VL-8B-Instruct` vào:
 
@@ -115,9 +128,27 @@ Tải model `Qwen/Qwen3-VL-8B-Instruct` vào:
 /mnt/models/Qwen3-VL-8B-Instruct
 ```
 
-Không đặt base model trong repo. Repo chỉ nên chứa code, manifest và LoRA adapter B2.
+Không đặt base model trong repo.
 
-## 6. Chuẩn bị Python environment
+## 7. Tải LoRA adapter B2
+
+Tải Hugging Face artifact của `qwen3vl_rukopys_lora_final` vào:
+
+```text
+/mnt/models/qwen3vl_rukopys_lora_final
+```
+
+Thư mục này cần có tối thiểu:
+
+```text
+/mnt/models/qwen3vl_rukopys_lora_final/adapter_config.json
+/mnt/models/qwen3vl_rukopys_lora_final/adapter_model.safetensors
+/mnt/models/qwen3vl_rukopys_lora_final/rukopys_prompt_config.json
+```
+
+Không đặt LoRA adapter trong repo vì `adapter_model.safetensors` là artifact lớn và phải được quản lý như external model artifact.
+
+## 8. Chuẩn bị Python environment
 
 Base ML Environment thường đã có Python/CUDA/PyTorch. Bạn vẫn cần đảm bảo các thư viện runtime có mặt:
 
@@ -134,7 +165,7 @@ tqdm
 
 `check_runtime_ready.py` sẽ báo thiếu module nào. Cài thiếu gì thì cài bổ sung trong environment của VM.
 
-## 7. Tạo runtime config
+## 9. Tạo runtime config
 
 Từ repo root:
 
@@ -153,7 +184,7 @@ Nội dung mặc định đã trỏ tới layout chuẩn:
 ```json
 {
   "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
-  "lora_adapter_path": "qwen3vl_rukopys_lora_final",
+  "lora_adapter_path": "/mnt/models/qwen3vl_rukopys_lora_final",
   "image_roots": [
     "/mnt/data/rukopys/train",
     "/mnt/data/rukopys"
@@ -163,7 +194,7 @@ Nội dung mặc định đã trỏ tới layout chuẩn:
 
 Nếu VM của bạn dùng path khác, chỉ sửa trong `phaseB2/b2_runtime_config.json`, không sửa template.
 
-## 8. Kiểm tra readiness
+## 10. Kiểm tra readiness
 
 Chạy:
 
@@ -193,7 +224,7 @@ official_metric_notebook
 
 Nếu `image_paths_all` fail, gần như chắc dataset chưa nằm đúng `/mnt/data/rukopys/train/images`.
 
-## 9. Chạy smoke test
+## 11. Chạy smoke test
 
 Trước khi chạy đủ 159 ảnh validation, chạy thử 3 ảnh:
 
@@ -213,7 +244,7 @@ artifacts/baseline_predictions_cache/b2_stage2_gold__crop-none__prompt-v1__val-v
 
 Smoke test dùng `--skip-score` vì chỉ kiểm tra model load, image path, prompt, raw output và parser.
 
-## 10. Chạy B2 baseline thật
+## 12. Chạy B2 baseline thật
 
 Khi smoke test ổn, chạy:
 
@@ -240,7 +271,7 @@ python phaseB2/run_b2_baseline_cache.py --config phaseB2/b2_runtime_config.json 
 
 Chỉ dùng `--overwrite` khi bạn chắc chắn muốn thay toàn bộ output trong thư mục đích.
 
-## 11. Kiểm tra B2 pass gate
+## 13. Kiểm tra B2 pass gate
 
 Sau khi chạy xong, mở:
 
