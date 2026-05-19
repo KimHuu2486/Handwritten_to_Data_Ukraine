@@ -185,6 +185,11 @@ Nội dung mặc định đã trỏ tới layout chuẩn:
 {
   "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
   "lora_adapter_path": "/mnt/models/qwen3vl_rukopys_lora_final",
+  "model_load": {
+    "device": "cuda:0",
+    "load_in_4bit": false,
+    "torch_dtype": "float16"
+  },
   "image_roots": [
     "/mnt/data/rukopys/train",
     "/mnt/data/rukopys"
@@ -192,7 +197,9 @@ Nội dung mặc định đã trỏ tới layout chuẩn:
 }
 ```
 
-Nếu VM của bạn dùng path khác, chỉ sửa trong `phaseB2/b2_runtime_config.json`, không sửa template.
+Profile mặc định ưu tiên RTX A6000 48GB: chạy FP16 và không dùng 4-bit quantization để tận dụng VRAM/GPU tốt hơn. Các khóa `bnb_4bit_*` trong config chỉ có tác dụng khi `load_in_4bit=true`.
+
+Nếu VM của bạn dùng path khác, chỉ sửa trong `phaseB2/b2_runtime_config.json`, không sửa template. Nếu FP16 bị OOM trên GPU nhỏ hơn, đổi `load_in_4bit` về `true` trong file config local.
 
 ## 10. Kiểm tra readiness
 

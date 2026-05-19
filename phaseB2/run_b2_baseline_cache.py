@@ -73,6 +73,8 @@ def build_model_and_processor(cfg: dict[str, Any]):
     }
     model_kwargs = {key: value for key, value in model_kwargs.items() if value is not None}
 
+    load_mode = "4bit" if quantization_config is not None else str(load_cfg.get("torch_dtype", "float16"))
+    print(f"loading model base={base_model_path} adapter={adapter_path} device={device} mode={load_mode}", flush=True)
     try:
         base_model = AutoModelForImageTextToText.from_pretrained(base_model_path, dtype=torch_dtype, **model_kwargs)
     except TypeError:
