@@ -56,6 +56,103 @@ def cleanup_runtime_memory(torch) -> None:
         torch.cuda.empty_cache()
 
 
+def first_token_id(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (list, tuple)) and value:
+        return first_token_id(value[0])
+    return None
+
+
+def resolve_eos_token_id(model, processor) -> int | None:
+    tokenizer = getattr(processor, "tokenizer", None)
+    generation_config = getattr(model, "generation_config", None)
+    model_config = getattr(model, "config", None)
+    for source in (generation_config, model_config, tokenizer):
+        token_id = first_token_id(getattr(source, "eos_token_id", None))
+        if token_id is not None:
+            return token_id
+    return None
+
+
+def resolve_pad_token_id(model, processor, fallback_token_id: int | None) -> int | None:
+    tokenizer = getattr(processor, "tokenizer", None)
+    generation_config = getattr(model, "generation_config", None)
+    model_config = getattr(model, "config", None)
+    for source in (generation_config, model_config, tokenizer):
+        token_id = first_token_id(getattr(source, "pad_token_id", None))
+        if token_id is not None:
+            return token_id
+    return fallback_token_id
+
+
+class PerRowRepetitionEOSProcessor:
+    def __init__(
+        self,
+        torch,
+        prompt_len: int,
+        eos_token_id: int,
+        min_new_tokens: int,
+        ngram_size: int,
+        repeat_count: int,
+        check_interval: int,
+    ):
+        self.torch = torch
+        self.prompt_len = prompt_len
+        self.eos_token_id = eos_token_id
+        self.min_new_tokens = max(1, min_new_tokens)
+        self.ngram_size = max(1, ngram_size)
+        self.repeat_count = max(2, repeat_count)
+        self.check_interval = max(1, check_interval)
+        self.tail_len = self.ngram_size * self.repeat_count
+        self.forced_rows: set[int] = set()
+
+    def __call__(self, input_ids, scores):
+        new_len = int(input_ids.shape[-1]) - self.prompt_len
+        if new_len < max(self.min_new_tokens, self.tail_len) or new_len % self.check_interval != 0:
+            return scores
+        if self.eos_token_id < 0 or self.eos_token_id >= int(scores.shape[-1]):
+            return scores
+
+        for row_idx in range(int(input_ids.shape[0])):
+            if row_idx in self.forced_rows:
+                continue
+            tail = input_ids[row_idx, -self.tail_len :]
+            first_chunk = tail[: self.ngram_size]
+            repeated = True
+            for offset in range(self.ngram_size, self.tail_len, self.ngram_size):
+                if not self.torch.equal(first_chunk, tail[offset : offset + self.ngram_size]):
+                    repeated = False
+                    break
+            if repeated:
+                scores[row_idx, :] = -self.torch.inf
+                scores[row_idx, self.eos_token_id] = 0
+                self.forced_rows.add(row_idx)
+        return scores
+
+
+def build_repetition_logits_processor(torch, model, processor, inputs, generation_params: dict[str, Any]):
+    stop_cfg = generation_params.get("repetition_eos_stop", {})
+    if not bool(stop_cfg.get("enabled", True)):
+        return None
+    if int(generation_params.get("num_beams", 1)) != 1:
+        return None
+
+    eos_token_id = resolve_eos_token_id(model, processor)
+    if eos_token_id is None:
+        return None
+
+    return PerRowRepetitionEOSProcessor(
+        torch=torch,
+        prompt_len=int(inputs.input_ids.shape[-1]),
+        eos_token_id=eos_token_id,
+        min_new_tokens=int(stop_cfg.get("min_new_tokens", 512)),
+        ngram_size=int(stop_cfg.get("ngram_size", 32)),
+        repeat_count=int(stop_cfg.get("repeat_count", 4)),
+        check_interval=int(stop_cfg.get("check_interval", 32)),
+    )
+
+
 def build_model_and_processor(cfg: dict[str, Any]):
     torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig = import_runtime_modules()
     load_cfg = cfg.get("model_load", {})
@@ -162,6 +259,8 @@ def run_image_batch(
             text_prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
 
     try:
+        from transformers import LogitsProcessorList
+
         image_inputs, video_inputs = process_vision_info(messages_batch)
         if getattr(processor, "tokenizer", None) is not None:
             processor.tokenizer.padding_side = "left"
@@ -180,17 +279,27 @@ def run_image_batch(
             "do_sample": bool(generation_params["do_sample"]),
             "num_beams": int(generation_params["num_beams"]),
         }
+        eos_token_id = resolve_eos_token_id(model, processor)
+        if eos_token_id is not None:
+            generate_kwargs["eos_token_id"] = eos_token_id
+            generate_kwargs["pad_token_id"] = resolve_pad_token_id(model, processor, eos_token_id)
+        repetition_processor = build_repetition_logits_processor(torch, model, processor, inputs, generation_params)
+        if repetition_processor is not None:
+            generate_kwargs["logits_processor"] = LogitsProcessorList([repetition_processor])
         with torch.no_grad():
             generated_ids = model.generate(**inputs, **generate_kwargs)
 
         generated_ids_trimmed = [
             out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
-        return processor.batch_decode(
+        output_texts = processor.batch_decode(
             generated_ids_trimmed,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
+        if repetition_processor is not None and repetition_processor.forced_rows:
+            print(f"batch repetition_eos_stop rows={len(repetition_processor.forced_rows)}", flush=True)
+        return output_texts
     finally:
         generated_ids_trimmed = None
         generated_ids = None
