@@ -199,6 +199,18 @@ Nội dung mặc định đã trỏ tới layout chuẩn:
 
 Profile mặc định ưu tiên RTX A6000 48GB: chạy FP16 và không dùng 4-bit quantization để tận dụng VRAM/GPU tốt hơn. Các khóa `bnb_4bit_*` trong config chỉ có tác dụng khi `load_in_4bit=true`.
 
+Runner mặc định dùng batch size 2 cho page-level generation trên A6000:
+
+```json
+{
+  "runtime": {
+    "inference_batch_size": 2
+  }
+}
+```
+
+Nếu batch generate bị OOM hoặc không ổn định, đổi `inference_batch_size` về `1` trong `phaseB2/b2_runtime_config.json`. Nếu smoke test batch 2 ổn và GPU còn nhiều VRAM, có thể thử `4` sau khi B2 baseline đã có kết quả đối chứng.
+
 Nếu VM của bạn dùng path khác, chỉ sửa trong `phaseB2/b2_runtime_config.json`, không sửa template. Nếu FP16 bị OOM trên GPU nhỏ hơn, đổi `load_in_4bit` về `true` trong file config local.
 
 ## 10. Kiểm tra readiness

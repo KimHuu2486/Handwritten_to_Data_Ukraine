@@ -98,31 +98,63 @@ def run_single_image(
     prompt_text: str,
     generation_params: dict[str, Any],
 ) -> str:
-    print("  build messages", flush=True)
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "image": str(image_path),
-                    "max_pixels": int(generation_params["max_pixels_page"]),
-                },
-                {"type": "text", "text": prompt_text},
-            ],
-        }
-    ]
+    return run_image_batch(
+        torch=torch,
+        process_vision_info=process_vision_info,
+        model=model,
+        processor=processor,
+        device=device,
+        image_paths=[image_path],
+        prompt_text=prompt_text,
+        generation_params=generation_params,
+    )[0]
 
-    try:
-        text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-    except TypeError:
-        text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+def run_image_batch(
+    torch,
+    process_vision_info,
+    model,
+    processor,
+    device: str,
+    image_paths: list[Path],
+    prompt_text: str,
+    generation_params: dict[str, Any],
+) -> list[str]:
+    print(f"  build messages batch_size={len(image_paths)}", flush=True)
+    messages_batch = []
+    for image_path in image_paths:
+        messages_batch.append(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": str(image_path),
+                            "max_pixels": int(generation_params["max_pixels_page"]),
+                        },
+                        {"type": "text", "text": prompt_text},
+                    ],
+                }
+            ]
+        )
+
+    text_prompts = []
+    for messages in messages_batch:
+        try:
+            text_prompts.append(
+                processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+            )
+        except TypeError:
+            text_prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
 
     print("  process vision info", flush=True)
-    image_inputs, video_inputs = process_vision_info(messages)
+    image_inputs, video_inputs = process_vision_info(messages_batch)
     print("  processor encode", flush=True)
+    if getattr(processor, "tokenizer", None) is not None:
+        processor.tokenizer.padding_side = "left"
     inputs = processor(
-        text=[text_prompt],
+        text=text_prompts,
         images=image_inputs,
         videos=video_inputs,
         padding=True,
@@ -140,6 +172,7 @@ def run_single_image(
     input_token_count = int(inputs.input_ids.shape[-1]) if hasattr(inputs, "input_ids") else -1
     print(
         "  generate start "
+        f"batch_size={len(image_paths)} "
         f"input_tokens={input_token_count} "
         f"max_new_tokens={generate_kwargs['max_new_tokens']} "
         f"do_sample={generate_kwargs['do_sample']} "
@@ -151,21 +184,21 @@ def run_single_image(
         generated_ids = model.generate(**inputs, **generate_kwargs)
     generate_sec = time.perf_counter() - generate_start
     output_token_count = int(generated_ids.shape[-1] - inputs.input_ids.shape[-1])
-    print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens={output_token_count}", flush=True)
+    print(f"  generate done runtime_sec={generate_sec:.2f} output_tokens_max={output_token_count}", flush=True)
 
     generated_ids_trimmed = [
         out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
     ]
     print("  decode output", flush=True)
-    output_text = processor.batch_decode(
+    output_texts = processor.batch_decode(
         generated_ids_trimmed,
         skip_special_tokens=True,
         clean_up_tokenization_spaces=False,
-    )[0]
+    )
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    return output_text
+    return output_texts
 
 
 def existing_done_ids(predictions_path: Path) -> set[str]:
@@ -256,109 +289,183 @@ def main() -> int:
     start_time = time.perf_counter()
     parse_fail_count = sum(1 for row in prediction_rows if str(row.get("parse_ok")).lower() != "true")
     checkpoint_every = int(cfg.get("runtime", {}).get("checkpoint_every", 5))
+    inference_batch_size = max(1, int(cfg.get("runtime", {}).get("inference_batch_size", 1)))
     flush_every_row = args.limit is not None and args.limit <= checkpoint_every
 
+    pending_rows = []
     for index, row in enumerate(manifest_rows):
-        image_id = str(row["image_id"])
-        if image_id in done_ids:
-            print(f"[{index + 1}/{len(manifest_rows)}] skip cached image_id={image_id}", flush=True)
-            continue
+        if str(row["image_id"]) in done_ids:
+            print(f"[{index + 1}/{len(manifest_rows)}] skip cached image_id={row['image_id']}", flush=True)
+        else:
+            pending_rows.append((index, row))
 
-        raw_output_id = f"raw_{index:06d}"
-        row_start = time.perf_counter()
-        parse_ok = True
-        error_type = ""
-        raw_text = ""
-        regions: list[dict[str, Any]] = []
+    for batch_start in range(0, len(pending_rows), inference_batch_size):
+        batch_items = pending_rows[batch_start : batch_start + inference_batch_size]
+        valid_items = []
+        prepared_results: dict[int, dict[str, Any]] = {}
 
-        try:
-            print(f"[{index + 1}/{len(manifest_rows)}] start image_id={image_id}", flush=True)
-            image_path = resolve_image_path(row, cfg.get("image_roots", []))
-            print(f"[{index + 1}/{len(manifest_rows)}] resolved image_path={image_path}", flush=True)
-            raw_text = run_single_image(
-                torch=torch,
-                process_vision_info=process_vision_info,
-                model=model,
-                processor=processor,
-                device=device,
-                image_path=image_path,
-                prompt_text=prompt_text,
-                generation_params=cfg["generation_params"],
-            )
-            print(f"[{index + 1}/{len(manifest_rows)}] parse raw output chars={len(raw_text)}", flush=True)
-            raw_regions, parse_error = extract_json_from_response(raw_text)
-            if parse_error:
-                parse_ok = False
-                error_type = parse_error
-                print(f"[{index + 1}/{len(manifest_rows)}] parse fail error_type={error_type}", flush=True)
-            else:
-                regions, normalize_error = normalize_regions(
-                    raw_regions,
-                    int(row["image_width"]),
-                    int(row["image_height"]),
-                    int(cfg["generation_params"]["max_pixels_page"]),
+        for index, row in batch_items:
+            raw_output_id = f"raw_{index:06d}"
+            row_start = time.perf_counter()
+            try:
+                print(f"[{index + 1}/{len(manifest_rows)}] start image_id={row['image_id']}", flush=True)
+                image_path = resolve_image_path(row, cfg.get("image_roots", []))
+                print(f"[{index + 1}/{len(manifest_rows)}] resolved image_path={image_path}", flush=True)
+                valid_items.append((index, row, image_path, raw_output_id, row_start))
+            except Exception as exc:
+                prepared_results[index] = {
+                    "row": row,
+                    "raw_output_id": raw_output_id,
+                    "row_start": row_start,
+                    "raw_text": traceback.format_exc(),
+                    "regions": [],
+                    "parse_ok": False,
+                    "error_type": type(exc).__name__,
+                }
+
+        if valid_items:
+            image_paths = [item[2] for item in valid_items]
+            try:
+                print(f"batch generate: size={len(valid_items)}", flush=True)
+                raw_texts = run_image_batch(
+                    torch=torch,
+                    process_vision_info=process_vision_info,
+                    model=model,
+                    processor=processor,
+                    device=device,
+                    image_paths=image_paths,
+                    prompt_text=prompt_text,
+                    generation_params=cfg["generation_params"],
                 )
-                if normalize_error:
+                for item, raw_text in zip(valid_items, raw_texts):
+                    index, row, _, raw_output_id, row_start = item
+                    prepared_results[index] = {
+                        "row": row,
+                        "raw_output_id": raw_output_id,
+                        "row_start": row_start,
+                        "raw_text": raw_text,
+                        "regions": [],
+                        "parse_ok": True,
+                        "error_type": "",
+                    }
+            except Exception:
+                if len(valid_items) > 1:
+                    print("batch generate failed; falling back to single-image generate", flush=True)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                for index, row, image_path, raw_output_id, row_start in valid_items:
+                    try:
+                        raw_text = run_single_image(
+                            torch=torch,
+                            process_vision_info=process_vision_info,
+                            model=model,
+                            processor=processor,
+                            device=device,
+                            image_path=image_path,
+                            prompt_text=prompt_text,
+                            generation_params=cfg["generation_params"],
+                        )
+                        prepared_results[index] = {
+                            "row": row,
+                            "raw_output_id": raw_output_id,
+                            "row_start": row_start,
+                            "raw_text": raw_text,
+                            "regions": [],
+                            "parse_ok": True,
+                            "error_type": "",
+                        }
+                    except Exception as exc:
+                        prepared_results[index] = {
+                            "row": row,
+                            "raw_output_id": raw_output_id,
+                            "row_start": row_start,
+                            "raw_text": traceback.format_exc(),
+                            "regions": [],
+                            "parse_ok": False,
+                            "error_type": type(exc).__name__,
+                        }
+
+        for index, result in sorted(prepared_results.items()):
+            row = result["row"]
+            raw_output_id = result["raw_output_id"]
+            row_start = result["row_start"]
+            raw_text = result["raw_text"]
+            regions: list[dict[str, Any]] = result["regions"]
+            parse_ok = bool(result["parse_ok"])
+            error_type = str(result["error_type"])
+
+            if parse_ok:
+                print(f"[{index + 1}/{len(manifest_rows)}] parse raw output chars={len(raw_text)}", flush=True)
+                raw_regions, parse_error = extract_json_from_response(raw_text)
+                if parse_error:
                     parse_ok = False
-                    error_type = normalize_error
-                    print(f"[{index + 1}/{len(manifest_rows)}] normalize fail error_type={error_type}", flush=True)
+                    error_type = parse_error
+                    print(f"[{index + 1}/{len(manifest_rows)}] parse fail error_type={error_type}", flush=True)
                 else:
-                    print(f"[{index + 1}/{len(manifest_rows)}] parse ok regions={len(regions)}", flush=True)
-        except Exception as exc:
-            parse_ok = False
-            error_type = type(exc).__name__
-            raw_text = raw_text or traceback.format_exc()
-            print(f"[{index + 1}/{len(manifest_rows)}] exception error_type={error_type}", flush=True)
+                    regions, normalize_error = normalize_regions(
+                        raw_regions,
+                        int(row["image_width"]),
+                        int(row["image_height"]),
+                        int(cfg["generation_params"]["max_pixels_page"]),
+                    )
+                    if normalize_error:
+                        parse_ok = False
+                        error_type = normalize_error
+                        print(f"[{index + 1}/{len(manifest_rows)}] normalize fail error_type={error_type}", flush=True)
+                    else:
+                        print(f"[{index + 1}/{len(manifest_rows)}] parse ok regions={len(regions)}", flush=True)
+            else:
+                print(f"[{index + 1}/{len(manifest_rows)}] exception error_type={error_type}", flush=True)
 
-        runtime_sec = time.perf_counter() - row_start
-        print(f"[{index + 1}/{len(manifest_rows)}] row done runtime_sec={runtime_sec:.2f} parse_ok={parse_ok}", flush=True)
-        append_jsonl(
-            raw_outputs_path,
-            {
-                "raw_output_id": raw_output_id,
-                "image_id": row["image_id"],
-                "file_name": row["file_name"],
-                "prompt_version": cfg["prompt_version"],
-                "generation_params": cfg["generation_params"],
-                "raw_text": raw_text,
-                "created_at": utc_now_iso(),
-            },
-        )
-
-        if not parse_ok:
-            parse_fail_count += 1
+            runtime_sec = time.perf_counter() - row_start
+            print(f"[{index + 1}/{len(manifest_rows)}] row done runtime_sec={runtime_sec:.2f} parse_ok={parse_ok}", flush=True)
             append_jsonl(
-                failed_rows_path,
+                raw_outputs_path,
                 {
+                    "raw_output_id": raw_output_id,
                     "image_id": row["image_id"],
                     "file_name": row["file_name"],
-                    "raw_output_id": raw_output_id,
-                    "error_type": error_type,
+                    "prompt_version": cfg["prompt_version"],
+                    "generation_params": cfg["generation_params"],
+                    "raw_text": raw_text,
                     "created_at": utc_now_iso(),
                 },
             )
 
-        prediction_rows.append(
-            {
-                "image_id": row["image_id"],
-                "file_name": row["file_name"],
-                "submission_image": row["submission_image"],
-                "regions": json.dumps(regions, ensure_ascii=False),
-                "parse_ok": parse_ok,
-                "error_type": "" if parse_ok else error_type,
-                "raw_output_id": raw_output_id,
-                "checkpoint_id": cfg["checkpoint_id"],
-                "prompt_version": cfg["prompt_version"],
-                "runtime_sec": f"{runtime_sec:.6f}",
-            }
-        )
+            if not parse_ok:
+                parse_fail_count += 1
+                append_jsonl(
+                    failed_rows_path,
+                    {
+                        "image_id": row["image_id"],
+                        "file_name": row["file_name"],
+                        "raw_output_id": raw_output_id,
+                        "error_type": error_type,
+                        "created_at": utc_now_iso(),
+                    },
+                )
 
-        if len(prediction_rows) % checkpoint_every == 0:
-            write_predictions_csv(predictions_path, prediction_rows)
-            print(f"checkpoint: {len(prediction_rows)}/{len(manifest_rows)} rows")
-        elif flush_every_row:
-            write_predictions_csv(predictions_path, prediction_rows)
-            print(f"smoke flush: {len(prediction_rows)}/{len(manifest_rows)} rows", flush=True)
+            prediction_rows.append(
+                {
+                    "image_id": row["image_id"],
+                    "file_name": row["file_name"],
+                    "submission_image": row["submission_image"],
+                    "regions": json.dumps(regions, ensure_ascii=False),
+                    "parse_ok": parse_ok,
+                    "error_type": "" if parse_ok else error_type,
+                    "raw_output_id": raw_output_id,
+                    "checkpoint_id": cfg["checkpoint_id"],
+                    "prompt_version": cfg["prompt_version"],
+                    "runtime_sec": f"{runtime_sec:.6f}",
+                }
+            )
+
+            if len(prediction_rows) % checkpoint_every == 0:
+                write_predictions_csv(predictions_path, prediction_rows)
+                print(f"checkpoint: {len(prediction_rows)}/{len(manifest_rows)} rows")
+            elif flush_every_row:
+                write_predictions_csv(predictions_path, prediction_rows)
+                print(f"smoke flush: {len(prediction_rows)}/{len(manifest_rows)} rows", flush=True)
 
     write_predictions_csv(predictions_path, prediction_rows)
 
@@ -374,6 +481,7 @@ def main() -> int:
         "runtime_total_sec": runtime_total_sec,
         "runtime_per_page_sec": runtime_per_page_sec,
         "device": device,
+        "inference_batch_size": inference_batch_size,
     }
     write_json(runtime_summary_path, runtime_summary)
 
