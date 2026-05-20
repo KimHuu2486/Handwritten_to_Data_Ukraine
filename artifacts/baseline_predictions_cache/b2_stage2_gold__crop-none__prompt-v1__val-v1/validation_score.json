@@ -1,36 +1,20 @@
 {
-  "total_score": 0.7860404803781254,
-  "detection_f1": 0.7808241668034807,
-  "class_acc": 0.9697224558452481,
-  "region_cer": 0.26224961652658973,
-  "page_cer": 0.20178876495336442,
+  "total_score": 0.7815175173721807,
+  "detection_f1": 0.782122905027933,
+  "class_acc": 0.95,
+  "region_cer": 0.2530552198275449,
+  "page_cer": 0.21476870486749144,
   "row_count": 159,
-  "parse_fail_count": 1,
-  "parse_fail_threshold": 3,
-  "raw_output_count": 159,
-  "missing_raw_output_count": 0,
-  "invalid_region_json_count": 0,
-  "runtime_total_sec": 22528.23263168335,
-  "runtime_per_page_sec": 141.68699768354307,
+  "parse_fail_count": 0,
+  "runtime_total_sec": 4460.30950507801,
+  "runtime_per_page_sec": 28.05226103822648,
   "metric_version": "official-compatible-v1",
-  "metric_implementation": "standalone_internal_official_compatible",
-  "source_manifest": "frozen_validation_manifest.v1",
-  "source_manifest_path": "./htr-artifacts/artifacts/manifests/frozen_validation_manifest.v1.jsonl",
-  "pass_gate": {
-    "prediction_row_count_matches_manifest": true,
-    "regions_are_json_lists": true,
-    "parse_fail_under_threshold": true,
-    "raw_outputs_complete": true,
-    "score_breakdown_complete": true
-  },
-  "details": {
-    "composite_score": 0.7860404803781254,
-    "detection_f1": 0.7808241668034807,
-    "class_acc": 0.9697224558452481,
-    "region_cer": 0.26224961652658973,
-    "page_cer": 0.20178876495336442,
-    "n_matched_regions": 2378,
-    "n_gt_regions": 3129,
-    "n_pred_regions": 2962
+  "metric_details": {
+    "detection_precision": 0.8048698004734528,
+    "detection_recall": 0.7606263982102909,
+    "matched_regions": 2380,
+    "false_positives": 577,
+    "false_negatives": 749,
+    "n_images": 159
   }
 }

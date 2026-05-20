@@ -1,0 +1,234 @@
+loading model base=/mnt/models/Qwen3-VL-8B-Instruct adapter=/home/ubuntu/Handwritten_to_Data_Ukraine/qwen3vl_rukopys_lora_final device=cuda:0 mode=float16
+Loading weights:   0%|          | 0/750 [00:00<?, ?it/s]Loading weights:   0%|          | 1/750 [00:03<44:23,  3.56s/it]Loading weights:  10%|█         | 76/750 [00:03<00:23, 28.18it/s]Loading weights:  13%|█▎        | 99/750 [00:04<00:22, 29.35it/s]Loading weights:  15%|█▌        | 113/750 [00:05<00:23, 26.64it/s]Loading weights:  16%|█▋        | 123/750 [00:05<00:23, 26.48it/s]Loading weights:  17%|█▋        | 130/750 [00:05<00:23, 26.10it/s]Loading weights:  18%|█▊        | 136/750 [00:06<00:25, 24.07it/s]Loading weights:  20%|█▉        | 147/750 [00:06<00:22, 27.40it/s]Loading weights:  20%|██        | 152/750 [00:06<00:24, 24.38it/s]Loading weights:  21%|██▏       | 160/750 [00:07<00:25, 23.48it/s]Loading weights:  23%|██▎       | 169/750 [00:07<00:19, 29.22it/s]Loading weights:  23%|██▎       | 174/750 [00:07<00:19, 30.02it/s]Loading weights:  24%|██▍       | 180/750 [00:07<00:21, 26.54it/s]Loading weights:  25%|██▌       | 189/750 [00:07<00:16, 33.22it/s]Loading weights:  26%|██▌       | 194/750 [00:08<00:24, 22.81it/s]Loading weights:  27%|██▋       | 202/750 [00:08<00:23, 23.82it/s]Loading weights:  28%|██▊       | 213/750 [00:08<00:17, 30.68it/s]Loading weights:  29%|██▉       | 217/750 [00:09<00:20, 25.50it/s]Loading weights:  30%|███       | 226/750 [00:09<00:22, 23.56it/s]Loading weights:  32%|███▏      | 237/750 [00:09<00:19, 25.68it/s]Loading weights:  33%|███▎      | 246/750 [00:10<00:16, 31.29it/s]Loading weights:  33%|███▎      | 250/750 [00:10<00:19, 25.78it/s]Loading weights:  34%|███▍      | 257/750 [00:10<00:19, 25.90it/s]Loading weights:  35%|███▍      | 260/750 [00:10<00:19, 25.54it/s]Loading weights:  36%|███▌      | 268/750 [00:10<00:16, 29.67it/s]Loading weights:  36%|███▋      | 272/750 [00:11<00:18, 26.34it/s]Loading weights:  37%|███▋      | 279/750 [00:11<00:16, 29.05it/s]Loading weights:  38%|███▊      | 283/750 [00:11<00:17, 26.30it/s]Loading weights:  39%|███▊      | 290/750 [00:11<00:16, 27.65it/s]Loading weights:  39%|███▉      | 293/750 [00:12<00:21, 21.16it/s]Loading weights:  40%|████      | 302/750 [00:12<00:19, 23.44it/s]Loading weights:  42%|████▏     | 312/750 [00:12<00:14, 30.18it/s]Loading weights:  42%|████▏     | 316/750 [00:12<00:14, 29.24it/s]Loading weights:  43%|████▎     | 323/750 [00:13<00:15, 27.82it/s]Loading weights:  43%|████▎     | 326/750 [00:13<00:19, 21.79it/s]Loading weights:  45%|████▍     | 334/750 [00:13<00:14, 29.14it/s]Loading weights:  46%|████▌     | 345/750 [00:14<00:16, 25.06it/s]Loading weights:  47%|████▋     | 354/750 [00:14<00:12, 31.82it/s]Loading weights:  48%|████▊     | 359/750 [00:14<00:17, 22.49it/s]Loading weights:  49%|████▉     | 368/750 [00:14<00:12, 30.40it/s]Loading weights:  50%|████▉     | 373/750 [00:14<00:14, 26.54it/s]Loading weights:  50%|█████     | 378/750 [00:15<00:17, 21.63it/s]Loading weights:  52%|█████▏    | 389/750 [00:15<00:11, 32.21it/s]Loading weights:  53%|█████▎    | 395/750 [00:15<00:14, 24.66it/s]Loading weights:  74%|███████▍  | 555/750 [00:15<00:00, 226.04it/s]Loading weights:  81%|████████  | 606/750 [00:16<00:00, 266.75it/s]Loading weights:  87%|████████▋ | 656/750 [00:16<00:00, 283.45it/s]Loading weights:  93%|█████████▎| 701/750 [00:16<00:00, 292.05it/s]Loading weights:  99%|█████████▉| 742/750 [00:16<00:00, 192.53it/s]Loading weights: 100%|██████████| 750/750 [00:16<00:00, 44.59it/s] 
+[1/159] start image_id=images/39c3eda8-e5d0-4566-a036-f002e92a91c6.jpg
+[1/159] resolved image_path=/mnt/data/rukopys/train/images/39c3eda8-e5d0-4566-a036-f002e92a91c6.jpg
+[2/159] start image_id=images/c62d730f-2e6b-5d50-8a62-b918bb6b730d.jpg
+[2/159] resolved image_path=/mnt/data/rukopys/train/images/c62d730f-2e6b-5d50-8a62-b918bb6b730d.jpg
+[3/159] start image_id=images/5bbc8721-d32e-41ac-b1f6-5d452b3c3698.jpg
+[3/159] resolved image_path=/mnt/data/rukopys/train/images/5bbc8721-d32e-41ac-b1f6-5d452b3c3698.jpg
+[4/159] start image_id=images/4d42c64b-69a6-48b0-bf22-d25d16ee5848.jpg
+[4/159] resolved image_path=/mnt/data/rukopys/train/images/4d42c64b-69a6-48b0-bf22-d25d16ee5848.jpg
+[5/159] start image_id=images/8773aeed-1297-5372-b537-1097a2030e26.jpg
+[5/159] resolved image_path=/mnt/data/rukopys/train/images/8773aeed-1297-5372-b537-1097a2030e26.jpg
+[6/159] start image_id=images/5656dd23-484d-5120-ae78-e4b59997b416.jpg
+[6/159] resolved image_path=/mnt/data/rukopys/train/images/5656dd23-484d-5120-ae78-e4b59997b416.jpg
+[7/159] start image_id=images/a7964907-f53d-5851-9d7e-397bd8b1c542.jpg
+[7/159] resolved image_path=/mnt/data/rukopys/train/images/a7964907-f53d-5851-9d7e-397bd8b1c542.jpg
+[8/159] start image_id=images/183370a2-45c6-4e9a-80e5-8b377c13f51a.jpg
+[8/159] resolved image_path=/mnt/data/rukopys/train/images/183370a2-45c6-4e9a-80e5-8b377c13f51a.jpg
+[9/159] start image_id=images/195812b7-a9bc-4cb1-b688-4d13261acc7a.jpg
+[9/159] resolved image_path=/mnt/data/rukopys/train/images/195812b7-a9bc-4cb1-b688-4d13261acc7a.jpg
+[10/159] start image_id=images/2d890d11-0e5d-4b5b-81e9-30d3359f36ef.jpg
+[10/159] resolved image_path=/mnt/data/rukopys/train/images/2d890d11-0e5d-4b5b-81e9-30d3359f36ef.jpg
+[11/159] start image_id=images/4147d461-2a04-4ed2-864c-10c9dc7c7092.jpg
+[11/159] resolved image_path=/mnt/data/rukopys/train/images/4147d461-2a04-4ed2-864c-10c9dc7c7092.jpg
+[12/159] start image_id=images/2a40e968-9d79-5272-9e10-4c3d1eeabcd6.jpg
+[12/159] resolved image_path=/mnt/data/rukopys/train/images/2a40e968-9d79-5272-9e10-4c3d1eeabcd6.jpg
+[13/159] start image_id=images/92e591b7-35ce-5c36-81fa-fc57b6a5be58.jpg
+[13/159] resolved image_path=/mnt/data/rukopys/train/images/92e591b7-35ce-5c36-81fa-fc57b6a5be58.jpg
+[14/159] start image_id=images/5ee2046f-1a0d-58b2-8997-ef1e17ba3f14.jpg
+[14/159] resolved image_path=/mnt/data/rukopys/train/images/5ee2046f-1a0d-58b2-8997-ef1e17ba3f14.jpg
+[15/159] start image_id=images/a1055d8e-925d-4d51-86ce-b5dc3252df78.jpg
+[15/159] resolved image_path=/mnt/data/rukopys/train/images/a1055d8e-925d-4d51-86ce-b5dc3252df78.jpg
+[16/159] start image_id=images/b4e58ddb-3001-5a39-9596-845074add672.jpg
+[16/159] resolved image_path=/mnt/data/rukopys/train/images/b4e58ddb-3001-5a39-9596-845074add672.jpg
+[17/159] start image_id=images/0ee30f12-61cf-58f4-a078-d5464c1f29d5.jpg
+[17/159] resolved image_path=/mnt/data/rukopys/train/images/0ee30f12-61cf-58f4-a078-d5464c1f29d5.jpg
+[18/159] start image_id=images/9ec4b2b0-d4d9-4024-8c30-7c648459e905.jpg
+[18/159] resolved image_path=/mnt/data/rukopys/train/images/9ec4b2b0-d4d9-4024-8c30-7c648459e905.jpg
+[19/159] start image_id=images/18af2afd-4107-4598-b314-93c6af313422.jpg
+[19/159] resolved image_path=/mnt/data/rukopys/train/images/18af2afd-4107-4598-b314-93c6af313422.jpg
+[20/159] start image_id=images/511d1cef-ff01-5043-8449-bc6badcb3d05.jpg
+[20/159] resolved image_path=/mnt/data/rukopys/train/images/511d1cef-ff01-5043-8449-bc6badcb3d05.jpg
+[21/159] start image_id=images/aaa48dd7-a21e-5e25-acae-cfa0f05e2eb6.jpg
+[21/159] resolved image_path=/mnt/data/rukopys/train/images/aaa48dd7-a21e-5e25-acae-cfa0f05e2eb6.jpg
+[22/159] start image_id=images/a148fed5-320e-59bc-a30d-12324def3390.jpg
+[22/159] resolved image_path=/mnt/data/rukopys/train/images/a148fed5-320e-59bc-a30d-12324def3390.jpg
+[23/159] start image_id=images/12001a51-174a-5df0-8fdf-647d548fb664.jpg
+[23/159] resolved image_path=/mnt/data/rukopys/train/images/12001a51-174a-5df0-8fdf-647d548fb664.jpg
+[24/159] start image_id=images/78327536-7faf-531b-bbad-7365b3795bea.jpg
+[24/159] resolved image_path=/mnt/data/rukopys/train/images/78327536-7faf-531b-bbad-7365b3795bea.jpg
+batch generate: size=24
+  build messages batch_size=24
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+  process vision info
+  processor encode
+  move tensors to cuda:0
+  generate start batch_size=24 input_tokens=912 max_new_tokens=4096 do_sample=False num_beams=1
+  generate done runtime_sec=1140.59 output_tokens_max=4096
+  decode output
+  repetition_eos_stop rows=23
+[1/159] parse raw output chars=2686
+[1/159] parse ok regions=27
+[1/159] row done runtime_sec=1148.56 parse_ok=True
+[2/159] parse raw output chars=870
+[2/159] parse ok regions=9
+[2/159] row done runtime_sec=1148.56 parse_ok=True
+[3/159] parse raw output chars=2860
+[3/159] parse ok regions=30
+[3/159] row done runtime_sec=1148.56 parse_ok=True
+[4/159] parse raw output chars=1328
+[4/159] parse ok regions=17
+[4/159] row done runtime_sec=1148.56 parse_ok=True
+[5/159] parse raw output chars=8292
+[5/159] parse ok regions=125
+[5/159] row done runtime_sec=1148.56 parse_ok=True
+[6/159] parse raw output chars=1749
+[6/159] parse ok regions=19
+[6/159] row done runtime_sec=1148.57 parse_ok=True
+[7/159] parse raw output chars=1064
+[7/159] parse ok regions=14
+[7/159] row done runtime_sec=1148.57 parse_ok=True
+[8/159] parse raw output chars=2659
+[8/159] parse ok regions=28
+[8/159] row done runtime_sec=1148.57 parse_ok=True
+[9/159] parse raw output chars=2245
+[9/159] parse ok regions=19
+[9/159] row done runtime_sec=1148.57 parse_ok=True
+[10/159] parse raw output chars=1556
+[10/159] parse ok regions=18
+[10/159] row done runtime_sec=1148.57 parse_ok=True
+[11/159] parse raw output chars=1652
+[11/159] parse ok regions=21
+[11/159] row done runtime_sec=1148.57 parse_ok=True
+[12/159] parse raw output chars=806
+[12/159] parse ok regions=10
+[12/159] row done runtime_sec=1148.57 parse_ok=True
+[13/159] parse raw output chars=1904
+[13/159] parse ok regions=20
+[13/159] row done runtime_sec=1148.57 parse_ok=True
+[14/159] parse raw output chars=1360
+[14/159] parse ok regions=18
+[14/159] row done runtime_sec=1148.57 parse_ok=True
+[15/159] parse raw output chars=1826
+[15/159] parse ok regions=20
+[15/159] row done runtime_sec=1148.57 parse_ok=True
+[16/159] parse raw output chars=512
+[16/159] parse ok regions=6
+[16/159] row done runtime_sec=1148.57 parse_ok=True
+[17/159] parse raw output chars=280
+[17/159] parse ok regions=4
+[17/159] row done runtime_sec=1148.57 parse_ok=True
+[18/159] parse raw output chars=1501
+[18/159] parse ok regions=18
+[18/159] row done runtime_sec=1148.57 parse_ok=True
+[19/159] parse raw output chars=3328
+[19/159] parse ok regions=36
+[19/159] row done runtime_sec=1148.57 parse_ok=True
+[20/159] parse raw output chars=1300
+[20/159] parse ok regions=19
+[20/159] row done runtime_sec=1148.57 parse_ok=True
+[21/159] parse raw output chars=1521
+[21/159] parse ok regions=19
+[21/159] row done runtime_sec=1148.57 parse_ok=True
+[22/159] parse raw output chars=2155
+[22/159] parse ok regions=19
+[22/159] row done runtime_sec=1148.57 parse_ok=True
+[23/159] parse raw output chars=2070
+[23/159] parse ok regions=25
+[23/159] row done runtime_sec=1148.57 parse_ok=True
+[24/159] parse raw output chars=315
+[24/159] parse ok regions=4
+[24/159] row done runtime_sec=1148.57 parse_ok=True
+checkpoint: 24/159 rows
+[25/159] start image_id=images/a347eb41-ddcd-51b0-b83e-0a3f9d91a5c7.jpg
+[25/159] resolved image_path=/mnt/data/rukopys/train/images/a347eb41-ddcd-51b0-b83e-0a3f9d91a5c7.jpg
+[26/159] start image_id=images/b1f7c6b6-29dc-5692-905d-b9e4386d1c9f.jpg
+[26/159] resolved image_path=/mnt/data/rukopys/train/images/b1f7c6b6-29dc-5692-905d-b9e4386d1c9f.jpg
+[27/159] start image_id=images/085b57e6-54e9-5fd0-99d0-d260c08bd9b9.jpg
+[27/159] resolved image_path=/mnt/data/rukopys/train/images/085b57e6-54e9-5fd0-99d0-d260c08bd9b9.jpg
+[28/159] start image_id=images/ec9dd609-3242-59f9-9403-0dcc1d1eea4c.jpg
+[28/159] resolved image_path=/mnt/data/rukopys/train/images/ec9dd609-3242-59f9-9403-0dcc1d1eea4c.jpg
+[29/159] start image_id=images/f0150ca6-0a33-5abe-89b1-22203a0d581b.jpg
+[29/159] resolved image_path=/mnt/data/rukopys/train/images/f0150ca6-0a33-5abe-89b1-22203a0d581b.jpg
+[30/159] start image_id=images/97a3c3d2-a680-5e95-9517-c7a2a8c19cab.jpg
+[30/159] resolved image_path=/mnt/data/rukopys/train/images/97a3c3d2-a680-5e95-9517-c7a2a8c19cab.jpg
+[31/159] start image_id=images/af654da4-c9e3-472e-bcba-c4e9b7cf0b2f.jpg
+[31/159] resolved image_path=/mnt/data/rukopys/train/images/af654da4-c9e3-472e-bcba-c4e9b7cf0b2f.jpg
+[32/159] start image_id=images/a6af2c4a-fe2b-5277-9ae9-41aa80e9c72c.jpg
+[32/159] resolved image_path=/mnt/data/rukopys/train/images/a6af2c4a-fe2b-5277-9ae9-41aa80e9c72c.jpg
+[33/159] start image_id=images/410d65cc-de2e-5c29-acf8-015f0f2a57a4.jpg
+[33/159] resolved image_path=/mnt/data/rukopys/train/images/410d65cc-de2e-5c29-acf8-015f0f2a57a4.jpg
+[34/159] start image_id=images/3718ed45-c8ad-409b-b174-7e90c05b5c3f.jpg
+[34/159] resolved image_path=/mnt/data/rukopys/train/images/3718ed45-c8ad-409b-b174-7e90c05b5c3f.jpg
+[35/159] start image_id=images/904167a5-9215-4b8a-99ca-a61d20402f31.jpg
+[35/159] resolved image_path=/mnt/data/rukopys/train/images/904167a5-9215-4b8a-99ca-a61d20402f31.jpg
+[36/159] start image_id=images/2cca6e5a-ae96-518b-82c7-4698dc4f0926.jpg
+[36/159] resolved image_path=/mnt/data/rukopys/train/images/2cca6e5a-ae96-518b-82c7-4698dc4f0926.jpg
+[37/159] start image_id=images/17c7de90-aa2f-58da-8269-271c9ac68a57.jpg
+[37/159] resolved image_path=/mnt/data/rukopys/train/images/17c7de90-aa2f-58da-8269-271c9ac68a57.jpg
+[38/159] start image_id=images/4e6b7184-8337-4523-82c4-bfe7fe5cd7cf.jpg
+[38/159] resolved image_path=/mnt/data/rukopys/train/images/4e6b7184-8337-4523-82c4-bfe7fe5cd7cf.jpg
+[39/159] start image_id=images/fb9043c7-a06a-4fb7-a745-e6913b17cfc6.jpg
+[39/159] resolved image_path=/mnt/data/rukopys/train/images/fb9043c7-a06a-4fb7-a745-e6913b17cfc6.jpg
+[40/159] start image_id=images/e02c002f-a328-5fbe-adea-07157c6a977a.jpg
+[40/159] resolved image_path=/mnt/data/rukopys/train/images/e02c002f-a328-5fbe-adea-07157c6a977a.jpg
+[41/159] start image_id=images/b91b14c3-e213-528c-a755-2eabdcf10a19.jpg
+[41/159] resolved image_path=/mnt/data/rukopys/train/images/b91b14c3-e213-528c-a755-2eabdcf10a19.jpg
+[42/159] start image_id=images/629c5464-2f1a-4405-975c-b7111ba3eb99.jpg
+[42/159] resolved image_path=/mnt/data/rukopys/train/images/629c5464-2f1a-4405-975c-b7111ba3eb99.jpg
+[43/159] start image_id=images/e53dd9eb-c642-527b-b90b-e63b9da07d5e.jpg
+[43/159] resolved image_path=/mnt/data/rukopys/train/images/e53dd9eb-c642-527b-b90b-e63b9da07d5e.jpg
+[44/159] start image_id=images/73dacade-f753-49e4-a25a-c61472b9a638.jpg
+[44/159] resolved image_path=/mnt/data/rukopys/train/images/73dacade-f753-49e4-a25a-c61472b9a638.jpg
+[45/159] start image_id=images/b09ee59c-494c-487b-8f46-38d71871d280.jpg
+[45/159] resolved image_path=/mnt/data/rukopys/train/images/b09ee59c-494c-487b-8f46-38d71871d280.jpg
+[46/159] start image_id=images/ca71bae8-a3ad-5472-86fe-659782a0e6ef.jpg
+[46/159] resolved image_path=/mnt/data/rukopys/train/images/ca71bae8-a3ad-5472-86fe-659782a0e6ef.jpg
+[47/159] start image_id=images/d969e0e1-a6a2-45d4-9d18-362f8106ecb8.jpg
+[47/159] resolved image_path=/mnt/data/rukopys/train/images/d969e0e1-a6a2-45d4-9d18-362f8106ecb8.jpg
+[48/159] start image_id=images/08fbeebf-6111-4743-bfcf-9d01c11f1f7a.jpg
+[48/159] resolved image_path=/mnt/data/rukopys/train/images/08fbeebf-6111-4743-bfcf-9d01c11f1f7a.jpg
+batch generate: size=24
+  build messages batch_size=24
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+  process vision info
+  processor encode
+  move tensors to cuda:0
+  generate start batch_size=24 input_tokens=912 max_new_tokens=4096 do_sample=False num_beams=1
