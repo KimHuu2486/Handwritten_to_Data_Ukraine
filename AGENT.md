@@ -3,8 +3,8 @@
 ## 1. 🎯 Tóm tắt dự án (Project Overview)
 - **Muc tieu:** Xay dung pipeline End-to-End Document Understanding cho Kaggle Handwritten to Data (RUKOPYS), dau ra la submission CSV gom bbox + type + text cho tai lieu viet tay tieng Ukraina.
 - **Muc tieu phu:** Chuan bi huong nghien cuu VLM + CoT theo lo trinh cache-first, ablation ladder, routing/refine va hau xu ly.
-- **Trang thai hien tai:** Dang o Phase B2, dong thoi da chot thiet ke `NewPipeline/pipeline.md` cho pipeline competition-first retrain tu baseline. Frozen validation manifest v1 da pass gate; B2 baseline anchor `b2_stage2_gold__crop-none__prompt-v1__val-v1` da co cache/score va da lock vao `artifacts/ablations/ablation_results.csv`.
-- **Huong pipeline moi:** Stage A source-aware layout -> Stage A+ deterministic `page_context_light` -> Stage B type-aware OCR voi `ocr_context_light` -> Stage C weighted risk score -> Stage D multi-view/refine voi `risk_rerank_context_light` -> Stage E metric-aware assembly.
+- **Trang thai hien tai:** Dang o Phase B2, dong thoi da chot va tai cau truc `NewPipeline/pipeline.md` cho pipeline competition-first retrain tu baseline. Frozen validation manifest v1 da pass gate; B2 baseline anchor `b2_stage2_gold__crop-none__prompt-v1__val-v1` da co cache/score va da lock vao `artifacts/ablations/ablation_results.csv`.
+- **Huong pipeline moi:** Stage A gom source-aware layout + deterministic `page_context_light` -> Stage B type-aware OCR voi `ocr_context_light` -> Stage C weighted risk gate -> Stage D multi-view/refine voi `risk_rerank_context_light` -> Stage E metric-aware assembly.
 - **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; batch 24 da chay trong `tmux` nhung CUDA driver `free` giam dan sau moi batch, nen batch 24 chi xem la aggressive/benchmark, khong mac dinh production-safe.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
@@ -45,6 +45,7 @@
 - [x] Doi Stage C tu OR-rule high-risk sang weighted `risk_score` + threshold/top-K per page + hard override + budget cap.
 - [x] Lam ro contextual OCR: Stage B dung `ocr_context_light` mac dinh; page thumbnail chi la visual fallback cho hard examples/high-risk regions.
 - [x] Lam ro Stage D multi-view refinement: original crop, zoom crop, expanded context crop, optional page thumbnail + `risk_rerank_context_light`, kem guardrail chong hallucination tu context.
+- [x] Tai cau truc `NewPipeline/pipeline.md` de de doc hon: gop Stage A/A+ thanh mot Stage A va chuan hoa Stage B/C/D/E theo dang contract/flow/table.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/khong nhat quan bbox format** -> **Fix:** Chuan hoa ve `[x1, y1, x2, y2]`, ho tro normalized, pixel va 0-1000 grid.
@@ -67,6 +68,7 @@
 - **Doc issue 18: `text_draft` gay mau thuan voi default `page_layout_only`** -> **Fix:** Chot ablation A/B; `text_draft` chi bat trong ablation B va khong phai default.
 - **Doc issue 19: `text_draft` co nguy co anchor sai Stage B OCR** -> **Fix:** Tach `ocr_context_light` khong chua draft; draft chi vao `risk_rerank_context_light` cho risk/rerank sau OCR.
 - **Doc issue 20: OR-rule high-risk refine qua nhieu vung** -> **Fix:** Doi sang weighted `risk_score`, refine theo threshold/top-K/hard override va `hard_cap`.
+- **Doc issue 21: `pipeline.md` trinh bay Stage A-E bi roi, A/A+ tach qua vun** -> **Fix:** Gop A/A+ thanh Stage A duy nhat va sap lai Stage B-E thanh cac contract ro input/output, flow, policy va guardrail.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
 - [ ] Sau khi B2 VM run ket thuc, verify `validation_predictions.csv`, `validation_raw_outputs.jsonl`, row count 159, score summary, runtime summary va checksum truoc khi dung cho Phase C.
@@ -88,7 +90,7 @@
 - `baseline/`: Baseline zero-shot va ket qua submit tham chieu.
 - `finetune/`: Notebook Stage 1/2, inference/submission hai-pass, train LoRA, spell-check va ket qua fine-tune.
 - `phaseB2/`: Runner `.py only` cho B2 baseline cache, readiness check, config template, metric/cache helpers, FP16/batch runtime diagnostics.
-- `NewPipeline/pipeline.md`: Thiet ke pipeline competition-first moi voi Stage A/A+/B/C/D/E, prompt hierarchy, `page_context_light`, weighted risk score va refinement policy.
+- `NewPipeline/pipeline.md`: Thiet ke pipeline competition-first moi voi Stage A-E dang contract; Stage A gom layout + deterministic context, Stage B OCR, Stage C risk gate, Stage D refinement, Stage E assembly.
 - `artifacts/manifests/`: Frozen validation manifest v1, config va gate report.
 - `artifacts/baseline_predictions_cache/`: Cache predictions/raw outputs/scores cho B2 baseline va smoke runs.
 - `artifacts/ablations/ablation_results.csv`: Bang lock ket qua ablation; da co dong B2 baseline anchor.

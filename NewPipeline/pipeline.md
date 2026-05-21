@@ -3,9 +3,7 @@
 ```text
 Input Page
    ↓
-Stage A — Coarse Layout Proposal
-   ↓
-Stage A+ — Deterministic Page Context Light
+Stage A — Layout Proposal + Deterministic Page Context Light
    ↓
 Stage B — Region OCR Pass
    ↓
@@ -26,17 +24,24 @@ Final submission JSON
 
 ---
 
-# 1. Stage A — **Coarse Layout Proposal**, tách detection khỏi transcription
+# 1. Stage A — **Layout Proposal + Deterministic Page Context Light**
 
-## Mục tiêu
-Full-page model **không chịu trách nhiệm đọc text chính xác nữa**.  
-Nó nên tập trung vào 1 đầu ra chính:
+Stage A đảm nhiệm 2 nhiệm vụ:
 
-1. `regions`: bbox/type ở mức vùng.
+1. Full-page model đề xuất `regions`: bbox/type.
+2. Code build `page_context_light` deterministic từ `regions`.
 
-Sau đó code sẽ build `page_context_light` deterministic từ `regions`, thay vì bắt model sinh context phức tạp không có ground truth trực tiếp.
+Điểm quan trọng: full-page model **không chịu trách nhiệm đọc text chính xác**. Nó tập trung vào layout, còn OCR chính xác được đẩy sang Stage B/D.
 
-`regions` nên có dạng:
+## 1.1. Đầu ra chính
+
+| Output | Sinh bởi | Vai trò | Ghi chú |
+|---|---|---|---|
+| `regions` | Full-page model | Bbox/type ở mức vùng | Output bắt buộc |
+| `text_draft` | Full-page model | Tín hiệu phụ cho risk/rerank | Optional ablation, không phải text cuối cùng |
+| `page_context_light` | Code deterministic | Metadata geometry/context cho Stage B/C/D | Không train model sinh context phức tạp |
+
+`regions` có dạng:
 
 ```json
 [
@@ -48,9 +53,9 @@ Sau đó code sẽ build `page_context_light` deterministic từ `regions`, thay
 
 `text_draft` là feature optional cho ablation, **không phải mặc định bắt buộc** và không dùng làm text cuối cùng.
 
----
+Sau đó code sẽ build `page_context_light` deterministic từ `regions`, thay vì bắt model sinh context phức tạp không có ground truth trực tiếp.
 
-## Vì sao nên tách?
+## 1.2. Vì sao tách layout khỏi transcription?
 
 Trong RUKOPYS, dữ liệu có:
 - handwriting,
@@ -59,7 +64,8 @@ Trong RUKOPYS, dữ liệu có:
 - table,
 - annotation,
 - image,
-- graph,  
+- graph,
+
 với domain rất khác nhau: archive, dictation, school, university.
 
 Nếu full-page pass vừa detect vừa đọc, mô hình dễ:
@@ -70,14 +76,35 @@ Nếu full-page pass vừa detect vừa đọc, mô hình dễ:
 
 Trong khi metric có:
 - **Detection F1**
-- **Page CER** rất nặng  
+- **Page CER** rất nặng
+
 nên **bbox thiếu hoặc reading order sai sẽ gây hại trực tiếp tới PageCER**, dù text từng crop có tốt.
 
----
+## 1.3. Luồng xử lý trong Stage A
 
-## Prompt Stage A theo `source`
+```text
+Full page image + source metadata
+  ↓
+Source-aware layout prompt
+  ↓
+regions: bbox/type + optional text_draft in ablation B
+  ↓
+Deterministic context builder
+  ↓
+page_context_light
+  ├─ ocr_context_light              → Stage B first-pass OCR
+  └─ risk_rerank_context_light      → Stage C/D risk/rerank/refine
+```
 
-Stage A là nơi dùng `source`, vì đây là tầng nhìn toàn trang để hiểu domain, phát hiện vùng và phân loại `type`.  
+Không nên train model sinh `page_context` đầy đủ, vì:
+- không có ground truth trực tiếp để supervised ổn định;
+- context do model hallucinate có thể kéo Stage B/D OCR sai;
+- complexity tăng mạnh và khó debug.
+
+## 1.4. Prompt Stage A theo `source`
+
+Stage A là nơi dùng `source`, vì đây là tầng nhìn toàn trang để hiểu domain, phát hiện vùng và phân loại `type`.
+
 `source` **không nên là prompt chính của crop OCR**, vì crop đã có bbox/type và chỉ cần đọc đúng nội dung vùng.
 
 Stage A nên có **rule chung cho mọi source** trước, sau đó mới thêm context riêng theo `source`.
@@ -121,26 +148,28 @@ Preserve reading order.
 | Coordinate plane, chart, plotted graph, axes-based visualization | `graph` |
 
 README cho thấy 4 domain khác nhau:
-- `dictation`: phone photo, handwriting prose
-- `archive`: 1919–1935, nét mực cũ, có chính tả cổ
-- `university`: exam, formula, chemistry, tables
-- `school`: notebook, bài tập, teacher marks
+
+| Source | Context |
+|---|---|
+| `dictation` | phone photo, handwriting prose |
+| `archive` | 1919–1935, nét mực cũ, có chính tả cổ |
+| `university` | exam, formula, chemistry, tables |
+| `school` | notebook, bài tập, teacher marks |
 
 Vì test metadata có `source`, Stage A nên dùng prompt theo source để phát hiện vùng và phân loại tốt hơn.
 
-### Dictation
-> "This is a Ukrainian national dictation page, usually prose handwriting captured by phone. Detect all visible document regions in reading order. Return bbox and type for each region. Do not infer missing lines from the canonical dictation text. Keep text_draft short and visually grounded if included."
+### Source-specific prompt
 
-### Archive
-> "This is an archival document from 1919-1935. It may contain handwriting, typewritten or printed headers, stamps, old Cyrillic/Ukrainian orthography, and dense administrative layout. Detect all meaningful text and non-text regions. Classify handwritten vs printed carefully. Do not modernize or complete text_draft from context."
+| Source | Prompt bổ sung |
+|---|---|
+| `dictation` | "This is a Ukrainian national dictation page, usually prose handwriting captured by phone. Detect all visible document regions in reading order. Return bbox and type for each region. Do not infer missing lines from the canonical dictation text. Keep text_draft short and visually grounded if included." |
+| `archive` | "This is an archival document from 1919-1935. It may contain handwriting, typewritten or printed headers, stamps, old Cyrillic/Ukrainian orthography, and dense administrative layout. Detect all meaningful text and non-text regions. Classify handwritten vs printed carefully. Do not modernize or complete text_draft from context." |
+| `school` | "This is a school homework page. It may contain handwritten answers, printed fragments, formulas, tables, teacher annotations, drawings, diagrams, coordinate plots, and charts. Detect all meaningful regions. Classify drawings/illustrations as image, and axes-based plots/charts as graph. Do not force non-text visuals into handwritten, printed, or formula." |
+| `university` | "This is a university exam or coursework page. It may contain handwritten text, printed text, mathematical or chemical formulas, tables, diagrams, plotted graphs, coordinate charts, and scientific figures. Detect all meaningful regions. Classify standalone equations or chemistry notation as formula, tabular structures as table, plotted axes/charts as graph, and diagrams/figures as image." |
 
-### School
-> "This is a school homework page. It may contain handwritten answers, printed fragments, formulas, tables, teacher annotations, drawings, diagrams, coordinate plots, and charts. Detect all meaningful regions. Classify drawings/illustrations as image, and axes-based plots/charts as graph. Do not force non-text visuals into handwritten, printed, or formula."
+## 1.5. Output modes cho train/infer
 
-### University
-> "This is a university exam or coursework page. It may contain handwritten text, printed text, mathematical or chemical formulas, tables, diagrams, plotted graphs, coordinate charts, and scientific figures. Detect all meaningful regions. Classify standalone equations or chemistry notation as formula, tabular structures as table, plotted axes/charts as graph, and diagrams/figures as image."
-
-Stage A có 2 chế độ output để train/infer:
+Stage A có 2 chế độ output để train/infer.
 
 ### `page_layout_only`
 
@@ -186,18 +215,9 @@ Phải so sánh ít nhất 2 pipeline:
 
 Nếu B làm Detection F1 giảm hoặc JSON/page layout kém ổn định, giữ A làm default.
 
----
+## 1.6. `page_context_light` deterministic
 
-## Stage A+ — `page_context_light` deterministic
-
-Không nên train model sinh `page_context` đầy đủ, vì:
-- không có ground truth trực tiếp để supervised ổn định;
-- context do model hallucinate có thể kéo Stage B/D OCR sai;
-- complexity tăng mạnh và khó debug.
-
-Thay vào đó, sau Stage A, code build `page_context_light` deterministic từ output `regions`.
-
-### Mục tiêu của `page_context_light`
+Thay vì train model sinh `page_context`, sau khi có `regions`, code build `page_context_light` deterministic từ output Stage A.
 
 `page_context_light` là metadata rẻ, ổn định, dễ debug:
 - source/domain của trang;
@@ -251,7 +271,7 @@ Nó không phải OCR toàn trang và không chứa kết luận semantic phức
 - `bbox_size_percentile`, `line_height_ratio`: tính theo thống kê page.
 - `text_draft`: copy từ Stage A nếu ablation B có bật, nhưng chỉ dùng cho risk/rerank sau OCR; không đưa vào Stage B first-pass prompt mặc định.
 
-### Hai loại excerpt
+## 1.7. Hai excerpt từ `page_context_light`
 
 Để tránh anchor OCR vào draft sai, tách `page_context_light` thành 2 excerpt:
 
@@ -287,24 +307,55 @@ The final OCR text must be supported by the crop or expanded crop.
 Do not complete missing words from page_context_light, optional text_draft, language prior, or canonical dictation text.
 ```
 
-Như vậy context được code tạo ra sau Stage A: ổn định, kiểm soát được, dễ ablation, còn full-page thumbnail chỉ là fallback thị giác cho vùng thật sự khó.
+Như vậy context được code tạo ra trong Stage A: ổn định, kiểm soát được, dễ ablation, còn full-page thumbnail chỉ là fallback thị giác cho vùng thật sự khó.
 
 ---
 
-# 2. Stage B — **Region OCR Reader**, tiếp tục dùng crop OCR nhưng mạnh hơn
+# 2. Stage B — **Region OCR Reader**
 
-Stage B kế thừa phần tốt nhất từ baseline hiện tại:  
-**crop từng vùng → OCR text chính xác.**
+Stage B: **crop từng vùng → OCR text chính xác**.
 
-Nhưng tôi đề xuất nâng cấp Stage B theo 2 hướng chính:
-- prompt crop OCR theo `type`, chỉ kèm `source hint` ngắn;
-- train thêm `contextual crop OCR`.
+1. Prompt crop OCR theo `type`, kèm `source hint` ngắn.
+2. Dùng `ocr_context_light` deterministic làm context mặc định.
+3. Train thêm `contextual crop OCR` cho vùng khó.
 
----
+## 2.1. Mục tiêu và trách nhiệm
 
-## 2.1. Prompt crop OCR theo `type` + source hint ngắn
+Stage B là OCR contract cho từng region đã được Stage A phát hiện.
+
+| Trách nhiệm | Quyết định |
+|---|---|
+| Input chính | Crop image + `type` + `source hint` + `ocr_context_light` |
+| Output chính | Exact transcription của region |
+| Không làm | Không detect layout lại, không sửa bbox, không suy diễn nội dung từ full page |
+| Structural types | `image` / `graph` trả text rỗng |
+| `text_draft` | Không đưa vào first-pass OCR prompt mặc định để tránh anchor vào draft sai |
+
+Điều này giúp crop OCR không bị phân tâm bởi nhiệm vụ layout, đồng thời giảm lỗi model “chuẩn hóa ngôn ngữ” sai domain.
+
+## 2.2. First-pass prompt assembly
 
 Sau Stage A, mỗi crop đã có `type`, nên prompt chính phải theo `type`. `source` chỉ nên là hint ngắn để tránh model chuẩn hóa sai domain.
+
+Mặc định Stage B first pass nên chạy:
+
+```text
+crop image
++ source hint
++ type-specific prompt
++ ocr_context_light excerpt
+→ first-pass OCR text
+```
+
+Prompt cuối nên được ghép theo mẫu:
+
+```text
+{short_source_hint}
+{type_specific_instruction}
+Use [illegible] only for unreadable words inside an otherwise legible text region.
+Use ~~word~~ for visible strikethrough and ~~old~~{new} for visible correction.
+Do not explain.
+```
 
 ### Source hint ngắn
 
@@ -325,65 +376,9 @@ Sau Stage A, mỗi crop đã có `type`, nên prompt chính phải theo `type`. 
 | `annotation` | "Read this short annotation or teacher mark. Return only the exact visible text." |
 | `image` / `graph` | "Return an empty string." |
 
-Prompt cuối nên được ghép theo mẫu:
-
-```text
-{short_source_hint}
-{type_specific_instruction}
-Use [illegible] only for unreadable words inside an otherwise legible text region.
-Use ~~word~~ for visible strikethrough and ~~old~~{new} for visible correction.
-Do not explain.
-```
-
-Điều này có khả năng cải thiện đáng kể các vùng dễ bị model “chuẩn hóa ngôn ngữ” sai, đồng thời tránh việc crop OCR bị phân tâm bởi nhiệm vụ layout.
-
-Với `formula` và `table`, nên xem đây là hard types mặc định:
-- oversample trong Stage 1/2 training vì số lượng ít hơn handwriting nhưng ảnh hưởng CER lớn;
-- đưa vào Risk Gate high-risk nếu crop nhỏ, dài, nhiều ký hiệu, nhiều hàng/cột, hoặc OCR pass 1 sinh text quá ngắn;
-- ưu tiên Stage D multi-view refinement thay vì chỉ đọc một crop duy nhất.
-
----
-
-## 2.2. Train thêm `contextual crop OCR`
-
-### Task B2 — `crop_with_page_context`
-Input:
-1. `ocr_context_light` excerpt built by code after Stage A
-2. crop region
-3. optional expanded crop or page thumbnail for high-risk examples
-
-Output:
-```text
-exact transcription
-```
-
-Lợi ích:
-- Một dòng đơn lẻ đôi khi khó đọc nếu tách khỏi câu trước/sau.
-- `ocr_context_light` giúp định vị dòng trước/sau, type lân cận, table/graph proximity, ký hiệu trong bảng, đoạn archive.
-- Page thumbnail chỉ dùng như visual fallback trong hard examples, không phải input mặc định cho mọi crop.
-- Không đưa `text_draft` vào Stage B first-pass OCR prompt mặc định để tránh anchor vào draft sai.
-
-Ý tưởng này tương ứng với:
-- **Doc-V\***: giữ global overview + fine detail.
-- **CogCoM**: multi-image, multi-turn reasoning giúp tận dụng ảnh gốc và ảnh crop cùng lúc.
-
----
-
-## 2.3. Cách dùng `ocr_context_light` trong Stage B
+## 2.3. `ocr_context_light` trong Stage B
 
 Stage B nên dùng `ocr_context_light` deterministic làm context mặc định. Full-page thumbnail không nên truyền lại cho mọi crop, và `text_draft` cũng không nên đưa vào first-pass OCR prompt mặc định.
-
-### Stage B first pass
-
-Mặc định nên chạy:
-
-```text
-crop image
-+ source hint
-+ type-specific prompt
-+ ocr_context_light excerpt
-→ first-pass OCR text
-```
 
 `ocr_context_light excerpt` chỉ nên chứa thông tin geometry/context liên quan đến region hiện tại:
 - source;
@@ -396,6 +391,32 @@ crop image
 - graph proximity / near_graph_id;
 - nearby formula ids nếu công thức nối tiếp dòng trước/sau;
 - bbox size percentile và line height ratio.
+
+## 2.4. Hard type policy
+
+Với `formula` và `table`, nên xem đây là hard types mặc định:
+- oversample trong Stage 1/2 training vì số lượng ít hơn handwriting nhưng ảnh hưởng CER lớn;
+- đưa vào Risk Gate high-risk nếu crop nhỏ, dài, nhiều ký hiệu, nhiều hàng/cột, hoặc OCR pass 1 sinh text quá ngắn;
+- ưu tiên Stage D multi-view refinement thay vì chỉ đọc một crop duy nhất.
+
+## 2.5. Train thêm `contextual crop OCR`
+
+### Task B2 — `crop_with_page_context`
+
+| Thành phần | Nội dung |
+|---|---|
+| Input 1 | `ocr_context_light` excerpt built by code after Stage A |
+| Input 2 | crop region |
+| Input 3 | optional expanded crop or page thumbnail for high-risk examples |
+| Output | exact transcription |
+
+Lợi ích:
+- Một dòng đơn lẻ đôi khi khó đọc nếu tách khỏi câu trước/sau.
+- `ocr_context_light` giúp định vị dòng trước/sau, type lân cận, table/graph proximity, ký hiệu trong bảng, đoạn archive.
+- Page thumbnail chỉ dùng như visual fallback trong hard examples, không phải input mặc định cho mọi crop.
+- Không đưa `text_draft` vào Stage B first-pass OCR prompt mặc định để tránh anchor vào draft sai.
+
+## 2.6. Contextual OCR runtime cho vùng khó
 
 Với các vùng có nguy cơ cao ngay từ đầu, có thể dùng thêm visual context:
 
@@ -417,7 +438,7 @@ Các vùng nên ưu tiên contextual OCR:
 - vùng trong bảng cần header/row label để hiểu đúng
 - vùng công thức nối tiếp dòng trước/sau
 
-### Guardrail bắt buộc
+## 2.7. Guardrail bắt buộc
 
 Prompt contextual OCR phải nói rõ:
 
@@ -433,27 +454,46 @@ Như vậy page context giúp giải mã vùng khó, nhưng không biến OCR th
 
 ---
 
-# 3. Stage C — **Uncertainty Gate / Risk Estimator**
+# 3. Stage C — **Risk Gate / Uncertainty Estimator**
 
-## Mục tiêu
-Không xử lý mọi crop giống nhau.
+Stage C quyết định region nào giữ nguyên OCR first-pass và region nào cần đưa sang Stage D để đọc lại có chủ đích.
 
-Sau lần OCR đầu, mỗi region được gán `risk_score` liên tục thay vì chỉ dùng rule nhị phân:
+Mục tiêu chính: **không xử lý mọi crop giống nhau**.
+
+## 3.1. Mục tiêu và trách nhiệm
+
+Sau lần OCR đầu, mỗi region được gán `risk_score` liên tục thay vì chỉ dùng rule nhị phân.
+
+| Trách nhiệm | Quyết định |
+|---|---|
+| Input chính | Stage A region, `page_context_light`, Stage B OCR text, crop quality signals |
+| Output chính | `risk_score` và quyết định refine/accept |
+| Low-risk | Giữ nguyên OCR text |
+| High-risk | Đưa vào Stage D để đọc lại có chủ đích |
+| Không làm | Không tự sửa text cuối, không chạy refinement trực tiếp |
 
 ```text
 LOW-RISK  → giữ nguyên text
 HIGH-RISK → đưa vào Stage D để đọc lại có chủ đích
 ```
 
----
+## 3.2. Risk score strategy
 
-## Heuristic risk score
+```text
+region + crop + OCR first-pass
+  ↓
+compute normalized risk features
+  ↓
+weighted risk_score
+  ↓
+threshold / top-K / hard override
+  ↓
+budget cap
+  ↓
+accept OCR text or send to Stage D
+```
 
-Trước khi huấn luyện HALP probe thật, nên làm **Risk Gate** bằng weighted heuristic score.
-
-Không nên dùng OR-rule kiểu “chỉ cần dính một điều kiện là high-risk”, vì dễ refine quá nhiều vùng và làm inference nặng mà gain không tương xứng.
-
-### Công thức gợi ý
+## 3.3. Công thức gợi ý
 
 ```text
 risk_score =
@@ -471,21 +511,26 @@ risk_score =
 + w12 * table_or_formula_long_region
 ```
 
-Feature có thể chuẩn hóa về `[0, 1]`:
-- `small_bbox`: bbox có diện tích nhỏ hoặc width/height bất thường.
-- `low_line_height`: chiều cao dòng thấp so với median page line height.
-- `blur`: crop có sharpness thấp.
-- `low_contrast`: crop có contrast thấp.
-- `hard_type`: `formula`, `table`, hoặc `annotation` khó.
-- `archive_source`: tài liệu archive có orthography cũ, form dày, mixed handwriting/printed.
-- `text_too_short`: OCR pass 1 quá ngắn so với bbox, hoặc so với `text_draft` nếu ablation B bật.
-- `empty_text_for_scorable`: OCR rỗng nhưng type là scorable.
-- `suspicious_chars`: nhiều `?`, replacement char, ký tự lạ, lặp ký tự/ngram.
-- `draft_crop_disagreement`: chỉ dùng khi ablation B bật; `text_draft` và crop OCR khác nhau lớn sau normalization.
-- `type_visual_mismatch`: type dự đoán mâu thuẫn với visual appearance hoặc geometry trong `page_context_light`.
-- `table_or_formula_long_region`: công thức/bảng dài, nhiều hàng/cột/ký hiệu.
+Feature có thể chuẩn hóa về `[0, 1]`.
 
-### Quyết định refine
+## 3.4. Feature groups
+
+| Nhóm | Feature | Ý nghĩa |
+|---|---|---|
+| Geometry | `small_bbox` | Bbox có diện tích nhỏ hoặc width/height bất thường |
+| Geometry | `low_line_height` | Chiều cao dòng thấp so với median page line height |
+| Image quality | `blur` | Crop có sharpness thấp |
+| Image quality | `low_contrast` | Crop có contrast thấp |
+| Type/source prior | `hard_type` | `formula`, `table`, hoặc `annotation` khó |
+| Type/source prior | `archive_source` | Tài liệu archive có orthography cũ, form dày, mixed handwriting/printed |
+| OCR output | `text_too_short` | OCR pass 1 quá ngắn so với bbox, hoặc so với `text_draft` nếu ablation B bật |
+| OCR output | `empty_text_for_scorable` | OCR rỗng nhưng type là scorable |
+| OCR output | `suspicious_chars` | Nhiều `?`, replacement char, ký tự lạ, lặp ký tự/ngram |
+| Draft/rerank | `draft_crop_disagreement` | Chỉ dùng khi ablation B bật; `text_draft` và crop OCR khác nhau lớn sau normalization |
+| Layout consistency | `type_visual_mismatch` | Type dự đoán mâu thuẫn với visual appearance hoặc geometry trong `page_context_light` |
+| Hard region shape | `table_or_formula_long_region` | Công thức/bảng dài, nhiều hàng/cột/ký hiệu |
+
+## 3.5. Quyết định refine
 
 Refine region nếu:
 
@@ -501,7 +546,7 @@ Hard override nên ít nhưng chắc:
 - bbox hợp lệ nhưng crop OCR trả JSON/explanation thay vì text.
 - vùng có `text_draft` đáng tin nhưng crop OCR rỗng hoặc lệch hoàn toàn; chỉ áp dụng khi ablation B bật.
 
-### Budget cap
+## 3.6. Budget cap
 
 Để kiểm soát compute, mỗi page nên có cap:
 
@@ -510,9 +555,14 @@ max_refine_regions_per_page = min(ceil(num_regions * top_k_percent), hard_cap)
 ```
 
 Gợi ý ban đầu để ablation:
-- `threshold = 0.55`
-- `top_k_percent = 0.20`
-- `hard_cap = 12 regions/page`
+
+| Parameter | Initial value |
+|---|---:|
+| `threshold` | `0.55` |
+| `top_k_percent` | `0.20` |
+| `hard_cap` | `12 regions/page` |
+
+## 3.7. Validation tuning
 
 Các giá trị này phải tune trên validation bằng trade-off:
 
@@ -524,53 +574,57 @@ formula/table CER gain vs over-refinement
 
 ---
 
-# 4. Stage D — **Interactive Refinement cho vùng high-risk**
+# 4. Stage D — **High-risk Region Refinement**
 
-Đây là phần hấp thụ trực tiếp từ:
-- **VLM-R³**
-- **CogCoM**
-- một phần **Doc-V\***
+Stage D xử lý các region đã bị Stage C đánh dấu high-risk. Khi crop khó, hệ thống **không chỉ đọc lại y hệt**, mà phải nhìn lại có chiến lược bằng nhiều view và chọn transcription được ảnh hỗ trợ tốt nhất.
 
-## Mục tiêu
-Khi crop khó, không chỉ đọc lại y hệt.  
-Hệ thống phải **nhìn lại có chiến lược**.
+## 4.1. Mục tiêu và trách nhiệm
 
----
+| Trách nhiệm | Quyết định |
+|---|---|
+| Input chính | High-risk region, crop image, `type`, source hint, `risk_rerank_context_light` |
+| Output chính | Refined OCR text cho region |
+| Chiến lược | Multi-view OCR + reranking/selector |
+| Không làm | Không sửa bbox, không detect layout lại, không dùng context để bịa nội dung |
+| Structural types | `image` / `graph` không cần OCR lại; text cuối vẫn là chuỗi rỗng |
 
-## 4.1. Stage D v1 — Multi-view + page-context refinement, dễ triển khai
+## 4.2. Runtime flow
 
-Với mỗi region high-risk, dùng `risk_rerank_context_light` excerpt mặc định và tạo tối đa 4 visual view:
+```text
+high-risk region from Stage C
+  ↓
+build visual views
+  ↓
+generate 2-4 OCR candidates
+  ↓
+rule-based reranking or lightweight LLM/VLM selector
+  ↓
+final refined text
+```
 
-### View 1 — Original crop
-Crop bbox với padding hiện tại.
+Với mỗi region high-risk, dùng `risk_rerank_context_light` excerpt mặc định và tạo tối đa 4 visual view.
 
-### View 2 — Zoomed crop
-Phóng to theo area ratio.  
+## 4.3. Visual views
+
+| View | Nội dung | Khi hữu ích |
+|---|---|---|
+| Original crop | Crop bbox với padding hiện tại | Baseline reread, giữ đúng vùng cần OCR |
+| Zoomed crop | Phóng to theo area ratio | Vùng chi tiết nhỏ, ký hiệu, chữ mờ hoặc nét dày |
+| Expanded context crop | Mở bbox +10–20% ngang, +10–15% dọc | Dòng cần chữ trước/sau, dictation, archive prose, handwritten continuous strokes |
+| Page thumbnail | Ảnh toàn trang độ phân giải thấp, optional | Khi crop/expanded crop và `risk_rerank_context_light` vẫn chưa đủ visual context |
+
 VLM-R³ cho thấy crop/zoom động giúp xử lý vùng chi tiết khó; quan trọng hơn, paper chứng minh interleaved visual evidence giúp model giữ attention vào vùng cần đọc thay vì “suy đoán bằng ngôn ngữ”.
 
-### View 3 — Expanded context crop
-Mở bbox ra:
-- +10–20% ngang
-- +10–15% dọc
-
-để model thấy từ trước/sau, đặc biệt với:
-- dictation,
-- archive prose,
-- handwritten continuous strokes.
-
-### View 4 — Page thumbnail
-Chỉ thêm ảnh toàn trang ở độ phân giải thấp khi `risk_rerank_context_light` + crop/expanded crop vẫn chưa đủ. Page thumbnail giúp giữ visual context:
-- vị trí vùng trên trang,
-- dòng trước/sau,
-- header/cột/hàng trong bảng,
-- công thức hoặc bài giải nối tiếp,
+Page thumbnail giúp giữ visual context:
+- vị trí vùng trên trang;
+- dòng trước/sau;
+- header/cột/hàng trong bảng;
+- công thức hoặc bài giải nối tiếp;
 - nguồn ngữ cảnh để phân biệt text thật với annotation/figure/graph.
 
 Page thumbnail là **visual fallback**, không dùng để thay thế crop và không nên là input mặc định cho mọi high-risk region.
 
----
-
-## 4.2. Cách infer
+## 4.4. Candidate generation
 
 Cho model 2-4 lượt OCR, tùy budget inference:
 
@@ -581,27 +635,31 @@ Candidate 3: context crop
 Candidate 4: risk_rerank_context_light excerpt + optional page thumbnail + crop/context crop
 ```
 
-Sau đó chọn text cuối bằng:
+Candidate cuối chỉ nên bật khi vùng thật sự cần thêm context hoặc cần selector/rerank có nhiều bằng chứng hơn.
+
+## 4.5. Reranking / selector
+
+Sau khi có candidates, chọn text cuối bằng một trong hai cách.
 
 ### Rule-based reranking
-- ưu tiên output hợp lệ theo type,
-- ít ký tự lạ hơn,
-- gần `text_draft` hơn nếu ablation B bật và draft có vẻ ổn,
-- gần canonical/retrieved lexicon hơn nếu thuộc dictation,
+
+- ưu tiên output hợp lệ theo type;
+- ít ký tự lạ hơn;
+- gần `text_draft` hơn nếu ablation B bật và draft có vẻ ổn;
+- gần canonical/retrieved lexicon hơn nếu thuộc dictation;
 - tránh output quá ngắn/ quá dài bất thường.
 
-### Hoặc LLM/VLM selector nhẹ
+### LLM/VLM selector nhẹ
+
 Input:
-- 3 candidate text
-- crop image
-- expanded crop
-- risk_rerank_context_light excerpt
-- optional page thumbnail
+- 4 candidate text;
+- crop image;
+- expanded crop;
+- `risk_rerank_context_light` excerpt;
+- optional page thumbnail;
 - yêu cầu: “Select the exact transcription best grounded in the image.”
 
----
-
-## 4.3. Prompt refinement theo `type`
+## 4.6. Prompt refinement theo `type`
 
 Stage D không quay lại prompt theo `source` đầy đủ. Nó dùng lại logic của Stage B:
 - prompt chính theo `type`;
@@ -623,49 +681,100 @@ Choose the transcription best supported by the image views.
 Return only the final text.
 ```
 
+## 4.7. Guardrail
+
 Với `image` và `graph`, Stage D không cần OCR lại; text cuối vẫn là chuỗi rỗng.
+
+Stage D chỉ được dùng context để định hướng layout, vị trí, loại vùng lân cận và quan hệ table/graph/formula. Text cuối phải được crop hoặc expanded crop hỗ trợ trực tiếp.
 
 ---
 
 # 5. Stage E — **Page-level Assembly & Metric-aware Postprocess**
 
-Notebook metric của bạn cho thấy score phụ thuộc rất mạnh vào:
+Stage E gom kết quả từ Stage A/B/D thành page-level submission JSON. Đây phải được xem là một **module chiến lược**, không chỉ là serialization.
 
-- `PageCER`: **0.50**
-- `Region CER`: **0.30**
-- `Detection F1`: **0.15**
-- `ClassAcc`: **0.05**
+## 5.1. Mục tiêu và trách nhiệm
 
-Vì vậy Stage E phải được xem là một **module chiến lược**, không chỉ là serialization.
+| Trách nhiệm | Quyết định |
+|---|---|
+| Input chính | Regions từ Stage A, OCR text từ Stage B, refined text từ Stage D |
+| Output chính | Final submission JSON theo contract cuộc thi |
+| Vai trò chính | Sắp reading order, deduplicate, enforce schema, preserve markers |
+| Không làm | Không OCR lại, không sửa nội dung bằng suy diễn ngôn ngữ |
 
----
+## 5.2. Metric priority
 
-### E1. Reading order chuẩn
-Sort:
+Notebook metric cho thấy score phụ thuộc rất mạnh vào:
+
+| Metric | Weight | Ý nghĩa cho Stage E |
+|---|---:|---|
+| `PageCER` | `0.50` | Reading order và page-level text assembly cực kỳ quan trọng |
+| `Region CER` | `0.30` | Không được làm hỏng text đã OCR/refine |
+| `Detection F1` | `0.15` | Không xóa/merge bbox bừa bãi khi postprocess |
+| `ClassAcc` | `0.05` | Giữ type ổn định, chỉ sửa khi có rule rõ |
+
+## 5.3. Assembly flow
+
+```text
+Stage A regions
+  + Stage B OCR text
+  + Stage D refined text for high-risk regions
+  ↓
+reading-order sort
+  ↓
+deduplicate overlap regions
+  ↓
+enforce structural type text policy
+  ↓
+preserve special markers
+  ↓
+final submission JSON
+```
+
+## 5.4. E1 — Reading order chuẩn
+
+Sort mặc định:
+
 ```python
 (y1, x1)
 ```
-nhưng cần thêm heuristic:
-- dòng cùng hàng thì x-order,
-- table giữ cấu trúc riêng,
+
+Nhưng cần thêm heuristic:
+- dòng cùng hàng thì x-order;
+- table giữ cấu trúc riêng;
 - annotation không nên chen sai vị trí vào page text nếu dễ phá PageCER.
 
-### E2. Deduplicate regions
+## 5.5. E2 — Deduplicate regions
+
 Nếu Stage A sinh overlap:
-- IoU lớn,
-- text gần giống,
-- cùng type,  
+- IoU lớn;
+- text gần giống;
+- cùng type;
+
 giữ box tốt nhất.
 
-### E3. Không cho `image`, `graph` có text
+Không nên dedupe quá mạnh vì có thể làm giảm Detection F1 hoặc phá PageCER.
+
+## 5.6. E3 — Không cho `image`, `graph` có text
+
 README schema quy định structural types này phải có text rỗng.
 
-### E4. Preserve special markers
+Rule:
+
+```text
+if type in {"image", "graph"}:
+  text = ""
+```
+
+## 5.7. E4 — Preserve special markers
+
 Dataset dùng:
 - `~~word~~`
 - `~~old~~{new}`
 - `[illegible]`
 
 Nếu không train/không postprocess kỹ, model sẽ hay làm mất marker, gây CER.
+
+Stage E cần giữ nguyên các marker hợp lệ thay vì normalize hoặc strip chúng.
 
 ---
