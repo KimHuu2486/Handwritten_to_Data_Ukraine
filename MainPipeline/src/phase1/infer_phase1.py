@@ -77,7 +77,21 @@ def build_model(cfg: dict[str, Any]):
 
 def generate_text(torch, process_vision_info, model, processor, device: str, image_path: Path, prompt: str, max_pixels: int, max_new_tokens: int) -> str:
     """Run one deterministic VLM generation for a single image/prompt pair."""
-    messages = [
+    return generate_text_batch(torch, process_vision_info, model, processor, device, [(image_path, prompt)], max_pixels, max_new_tokens)[0]
+
+
+def generate_text_batch(
+    torch,
+    process_vision_info,
+    model,
+    processor,
+    device: str,
+    items: list[tuple[Path, str]],
+    max_pixels: int,
+    max_new_tokens: int,
+) -> list[str]:
+    """Run deterministic VLM generation for a batch of image/prompt pairs."""
+    messages_list = [
         {
             "role": "user",
             "content": [
@@ -85,19 +99,30 @@ def generate_text(torch, process_vision_info, model, processor, device: str, ima
                 {"type": "text", "text": prompt},
             ],
         }
+        for image_path, prompt in items
     ]
-    try:
-        text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-    except TypeError:
-        text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(text=[text_prompt], images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
+    chat_messages = [[message] for message in messages_list]
+    text_prompts: list[str] = []
+    for messages in chat_messages:
+        try:
+            text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        except TypeError:
+            text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        text_prompts.append(text_prompt)
+    image_inputs, video_inputs = process_vision_info(chat_messages)
+    inputs = processor(text=text_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
     if device != "auto":
         inputs = inputs.to(device)
     with torch.inference_mode():
         generated_ids = model.generate(**inputs, max_new_tokens=int(max_new_tokens), do_sample=False, num_beams=1)
     generated_ids_trimmed = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
-    return processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+    return processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+
+
+def chunks(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
+    """Split pending Stage B crop jobs into fixed-size generation batches."""
+    safe_size = max(int(size), 1)
+    return [items[index : index + safe_size] for index in range(0, len(items), safe_size)]
 
 
 def clean_ocr_text(text: str) -> str:
@@ -120,6 +145,29 @@ def existing_images(csv_path: Path) -> set[str]:
         return {row["image"] for row in csv.DictReader(handle) if row.get("image")}
 
 
+def read_inference_rows(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], Path]:
+    """Load validation JSONL metadata or test rows from sample_submission.csv."""
+    input_cfg = cfg["input"]
+    if input_cfg.get("metadata_path"):
+        metadata_path = resolve_path(input_cfg["metadata_path"])
+        return read_jsonl(metadata_path), metadata_path
+
+    sample_submission_path = resolve_path(input_cfg["sample_submission_csv"])
+    with sample_submission_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = []
+        for csv_row in csv.DictReader(handle):
+            image_name = str(csv_row["image"])
+            rows.append(
+                {
+                    "submission_image": image_name,
+                    "file_name": image_name,
+                    "image_id": Path(image_name).stem,
+                    "source": input_cfg.get("default_source", "unknown"),
+                }
+            )
+    return rows, sample_submission_path
+
+
 def write_prediction_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     """Write Phase 1 predictions in a Kaggle-compatible shape plus debug columns."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +179,31 @@ def write_prediction_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             writer.writerow({field: row.get(field, "") for field in fields})
     tmp_path.replace(path)
+
+
+def write_submission_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    """Write the competition submission shape: image,regions only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["image", "regions"])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({"image": row.get("image", ""), "regions": row.get("regions", "[]")})
+    tmp_path.replace(path)
+
+
+def ensure_image_size(row: dict[str, Any], image_path: Path) -> dict[str, Any]:
+    """Fill image_width/image_height for test CSV rows that do not have metadata."""
+    if row.get("image_width") and row.get("image_height"):
+        return row
+    from PIL import Image
+
+    with Image.open(image_path) as image:
+        enriched = dict(row)
+        enriched["image_width"] = image.width
+        enriched["image_height"] = image.height
+        return enriched
 
 
 def run_page(cfg: dict[str, Any], runtime: tuple[Any, ...], row: dict[str, Any], image_path: Path, crops_dir: Path, raw_outputs_path: Path) -> tuple[list[dict[str, Any]], bool, str | None]:
@@ -158,39 +231,54 @@ def run_page(cfg: dict[str, Any], runtime: tuple[Any, ...], row: dict[str, Any],
         return [], False, parse_error
 
     regions = normalize_layout_regions(raw_layout, image_width, image_height)
-    final_regions: list[dict[str, Any]] = []
+    final_regions: list[dict[str, Any] | None] = [None] * len(regions)
+    pending_stage_b: list[dict[str, Any]] = []
     for region_index, region in enumerate(regions):
         region_type = normalize_type(region.get("type"))
         if region_type in STRUCTURAL_TYPES:
-            final_regions.append({"bbox": region["bbox"], "type": region_type, "text": ""})
+            final_regions[region_index] = {"bbox": region["bbox"], "type": region_type, "text": ""}
             continue
 
         crop_path = crops_dir / f"{Path(str(row.get('file_name', 'image'))).stem}__pred_{region_index:04d}__{region_type}.jpg"
         crop_region(image_path, region["bbox"], crop_path, float(generation_cfg.get("crop_pad_ratio", 0.02)))
-        stage_b_raw = generate_text(
+        pending_stage_b.append(
+            {
+                "region_index": region_index,
+                "region": region,
+                "type": region_type,
+                "crop_path": crop_path,
+                "prompt": stage_b_prompt(source, region_type),
+            }
+        )
+
+    stage_b_batch_size = int(generation_cfg.get("stage_b_batch_size", 1))
+    for batch in chunks(pending_stage_b, stage_b_batch_size):
+        batch_outputs = generate_text_batch(
             torch,
             process_vision_info,
             model,
             processor,
             device,
-            crop_path,
-            stage_b_prompt(source, region_type),
+            [(item["crop_path"], item["prompt"]) for item in batch],
             int(generation_cfg.get("max_pixels_crop", 262144)),
-            int(generation_cfg.get("max_new_tokens_stage_b", 512)),
+            int(generation_cfg.get("max_new_tokens_stage_b", 1024)),
         )
-        append_jsonl(
-            raw_outputs_path,
-            {
-                "stage": "B",
-                "file_name": row.get("file_name"),
-                "region_index": region_index,
-                "type": region_type,
-                "bbox": region["bbox"],
-                "raw_text": stage_b_raw,
-            },
-        )
-        final_regions.append({"bbox": region["bbox"], "type": region_type, "text": clean_ocr_text(stage_b_raw)})
-    return enforce_submission_policy(final_regions), True, None
+        for item, stage_b_raw in zip(batch, batch_outputs):
+            region = item["region"]
+            append_jsonl(
+                raw_outputs_path,
+                {
+                    "stage": "B",
+                    "file_name": row.get("file_name"),
+                    "region_index": item["region_index"],
+                    "type": item["type"],
+                    "bbox": region["bbox"],
+                    "batch_size": len(batch),
+                    "raw_text": stage_b_raw,
+                },
+            )
+            final_regions[item["region_index"]] = {"bbox": region["bbox"], "type": item["type"], "text": clean_ocr_text(stage_b_raw)}
+    return enforce_submission_policy([region for region in final_regions if region is not None]), True, None
 
 
 def main() -> int:
@@ -201,17 +289,17 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(resolve_path(args.config))
-    metadata_path = resolve_path(cfg["input"]["metadata_path"])
     image_roots = [str(root) for root in cfg["input"].get("image_roots", [])]
     output_csv = resolve_path(cfg["output"]["predictions_csv"])
     raw_outputs_path = resolve_path(cfg["output"]["raw_outputs_jsonl"])
     crops_dir = resolve_path(cfg["output"].get("crops_dir", "artifacts/main_pipeline/phase1/predictions/crops_tmp"))
+    submission_csv = resolve_path(cfg["output"]["submission_csv"]) if cfg["output"].get("submission_csv") else None
     runtime = build_model(cfg)
     if not args.resume and raw_outputs_path.exists():
         raw_outputs_path.unlink()
         print(f"reset raw outputs: {raw_outputs_path}", flush=True)
 
-    rows = read_jsonl(metadata_path)
+    rows, input_path = read_inference_rows(cfg)
     if args.limit is not None:
         rows = rows[: args.limit]
     done = existing_images(output_csv) if args.resume else set()
@@ -227,13 +315,15 @@ def main() -> int:
             print(f"[{row_index}/{len(rows)}] skip cached image={image_name}", flush=True)
             continue
         started = time.perf_counter()
-        image_path = resolve_image_path(row, metadata_path, image_roots)
+        image_path = resolve_image_path(row, input_path, image_roots)
         if image_path is None:
             regions, parse_ok, error_type = [], False, "image_not_found"
         else:
-            print(f"[{row_index}/{len(rows)}] infer image={image_name}", flush=True)
+            stage_b_batch_size = int(cfg.get("generation", {}).get("stage_b_batch_size", 1))
+            print(f"[{row_index}/{len(rows)}] infer image={image_name} stage_b_batch={stage_b_batch_size}", flush=True)
             try:
-                regions, parse_ok, error_type = run_page(cfg, runtime, row, image_path, crops_dir, raw_outputs_path)
+                enriched_row = ensure_image_size(row, image_path)
+                regions, parse_ok, error_type = run_page(cfg, runtime, enriched_row, image_path, crops_dir, raw_outputs_path)
             except Exception as exc:  # Keep long validation runs moving and preserve debug context.
                 regions, parse_ok = [], False
                 error_type = f"inference_exception:{exc.__class__.__name__}"
@@ -263,9 +353,15 @@ def main() -> int:
         )
         if len(prediction_rows) % checkpoint_every == 0:
             write_prediction_csv(output_csv, prediction_rows)
+            if submission_csv:
+                write_submission_csv(submission_csv, prediction_rows)
     write_prediction_csv(output_csv, prediction_rows)
+    if submission_csv:
+        write_submission_csv(submission_csv, prediction_rows)
     write_json(resolve_path(cfg["output"]["runtime_summary_json"]), {"row_count": len(prediction_rows), "finished_at": time.time()})
     print(f"wrote predictions: {output_csv}", flush=True)
+    if submission_csv:
+        print(f"wrote submission: {submission_csv}", flush=True)
     return 0
 
 

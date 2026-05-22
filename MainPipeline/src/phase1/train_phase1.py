@@ -28,13 +28,35 @@ class Phase1ProgressCallback(TrainerCallback):
         self.last_log_time = 0.0
         self.last_log_step = 0
 
+    @staticmethod
+    def _fmt_float(value: Any, digits: int = 4) -> str:
+        """Format noisy Trainer floats into short, readable log values."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        return f"{number:.{digits}g}"
+
+    @staticmethod
+    def _fmt_seconds(seconds: float) -> str:
+        """Format durations as HH:MM:SS for VM logs."""
+        total = max(int(seconds), 0)
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
+
     def on_train_begin(self, args, state, control, **kwargs):
         self.started_at = time.time()
         self.last_log_time = self.started_at
         self.last_log_step = 0
+        effective_batch = args.per_device_train_batch_size * args.gradient_accumulation_steps
         print(
-            f"phase1 train start steps={state.max_steps} epochs={args.num_train_epochs} "
-            f"batch={args.per_device_train_batch_size} grad_accum={args.gradient_accumulation_steps}",
+            "[train] start | "
+            f"steps={state.max_steps} | epochs={args.num_train_epochs} | "
+            f"batch={args.per_device_train_batch_size} | grad_accum={args.gradient_accumulation_steps} | "
+            f"effective_batch={effective_batch}",
             flush=True,
         )
 
@@ -59,19 +81,26 @@ class Phase1ProgressCallback(TrainerCallback):
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**3
             reserved = torch.cuda.memory_reserved() / 1024**3
-            vram = f" vram={allocated:.1f}/{reserved:.1f}GB"
+            vram = f" | vram={allocated:.1f}/{reserved:.1f}GB"
+        progress = current_step / total_steps * 100
+        log_kind = "eval" if eval_loss is not None else "train"
         metric_text = []
         if train_loss is not None:
-            metric_text.append(f"train_loss={train_loss}")
+            metric_text.append(f"loss={self._fmt_float(train_loss)}")
         if eval_loss is not None:
-            metric_text.append(f"eval_loss={eval_loss}")
+            metric_text.append(f"eval_loss={self._fmt_float(eval_loss)}")
+        if logs.get("mean_token_accuracy") is not None:
+            metric_text.append(f"token_acc={self._fmt_float(logs['mean_token_accuracy'])}")
+        if logs.get("grad_norm") is not None:
+            metric_text.append(f"grad_norm={self._fmt_float(logs['grad_norm'])}")
         if not metric_text:
             metric_text.append("loss=n/a")
         print(
-            f"step={current_step}/{total_steps} epoch={state.epoch:.2f} "
-            f"{' '.join(metric_text)} lr={lr} "
-            f"elapsed_sec={elapsed:.0f} eta_sec={eta_sec:.0f} "
-            f"sec_per_step={sec_per_step:.2f} steps_per_sec={steps_per_sec:.3f}{vram}",
+            f"[{log_kind}] step={current_step}/{total_steps} ({progress:.1f}%) | "
+            f"epoch={state.epoch:.2f} | {' | '.join(metric_text)} | "
+            f"lr={self._fmt_float(lr)} | elapsed={self._fmt_seconds(elapsed)} | "
+            f"eta={self._fmt_seconds(eta_sec)} | sec/step={sec_per_step:.2f} | "
+            f"step/s={steps_per_sec:.3f}{vram}",
             flush=True,
         )
         self.last_log_time = now
@@ -80,18 +109,19 @@ class Phase1ProgressCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         """Print eval_loss as its own event so validation checkpoints are obvious in logs."""
         if metrics and "eval_loss" in metrics:
-            print(f"eval complete step={state.global_step} eval_loss={metrics['eval_loss']}", flush=True)
+            print(f"[eval] complete | step={state.global_step} | eval_loss={self._fmt_float(metrics['eval_loss'])}", flush=True)
 
     def on_save(self, args, state, control, **kwargs):
         """Print the exact checkpoint directory saved by Trainer."""
         checkpoint_path = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
-        print(f"checkpoint saved step={state.global_step} path={checkpoint_path}", flush=True)
+        print(f"[save] checkpoint | step={state.global_step} | path={checkpoint_path}", flush=True)
 
     def on_train_end(self, args, state, control, **kwargs):
         """Print best checkpoint metadata after Trainer optionally reloads the best model."""
         print(
-            f"phase1 train end steps={state.global_step} "
-            f"best_metric={state.best_metric} best_model_checkpoint={state.best_model_checkpoint}",
+            "[train] end | "
+            f"steps={state.global_step} | best_metric={self._fmt_float(state.best_metric)} | "
+            f"best_model_checkpoint={state.best_model_checkpoint}",
             flush=True,
         )
 
@@ -316,6 +346,7 @@ def build_training_args(cfg: dict[str, Any], SFTConfig):
         max_grad_norm=float(train_cfg.get("max_grad_norm", 0.3)),
         warmup_ratio=float(train_cfg.get("warmup_ratio", 0.03)),
         logging_steps=int(train_cfg.get("logging_steps", 10)),
+        disable_tqdm=bool(train_cfg.get("disable_tqdm", True)),
         eval_strategy=train_cfg.get("eval_strategy", "steps"),
         eval_steps=train_cfg.get("eval_steps"),
         save_strategy=train_cfg.get("save_strategy", "steps"),
@@ -331,6 +362,19 @@ def build_training_args(cfg: dict[str, Any], SFTConfig):
         dataset_text_field="",
         dataset_kwargs={"skip_prepare_dataset": True},
     )
+
+
+def remove_default_trainer_loggers(trainer: Any) -> None:
+    """Remove Hugging Face default loggers so Phase1ProgressCallback is the only console logger."""
+    try:
+        from transformers import PrinterCallback, ProgressCallback
+    except ImportError:
+        return
+    for callback_cls in (PrinterCallback, ProgressCallback):
+        try:
+            trainer.remove_callback(callback_cls)
+        except ValueError:
+            continue
 
 
 def main() -> int:
@@ -370,6 +414,7 @@ def main() -> int:
         data_collator=make_data_collator(processor, process_vision_info, cfg),
         callbacks=[Phase1ProgressCallback()],
     )
+    remove_default_trainer_loggers(trainer)
 
     resume_checkpoint = cfg["training"].get("resume_checkpoint")
     trainer.train(resume_from_checkpoint=str(resolve_path(resume_checkpoint)) if resume_checkpoint else None)

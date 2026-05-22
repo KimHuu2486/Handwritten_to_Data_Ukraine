@@ -12,5 +12,6 @@
   "max_regions": null,
   "skip_missing_images": true,
   "crop_pad_ratio": 0.02,
+  "num_workers": 8,
   "max_pixels_crop": 262144
 }

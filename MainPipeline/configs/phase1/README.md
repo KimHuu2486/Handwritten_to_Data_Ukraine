@@ -20,6 +20,7 @@ mix_gold.json         -> gold_train.jsonl + gold_val.jsonl
 train_gold_a6000.json
 
 inference_val.json
+inference_test.json
 validate_val.json
 analyze_val.json
 ```
@@ -30,6 +31,7 @@ Path VM mặc định hiện tại:
 - Dataset root: `/mnt/data/rukopys`
 - Gold metadata/images: `/mnt/data/rukopys/train/metadata.jsonl`, `/mnt/data/rukopys/train/images`
 - Silver metadata/images: `/mnt/data/rukopys/silver/metadata.jsonl`, `/mnt/data/rukopys/silver/images`
+- Test metadata/images: `/mnt/data/rukopys/test/metadata.jsonl`, `/mnt/data/rukopys/test/images`
 
 Nếu VM khác mount, chỉnh các path sau:
 
@@ -41,3 +43,4 @@ Nếu VM khác mount, chỉnh các path sau:
 Lưu ý: các config Phase 1 dùng đúng thư mục `silver`.
 
 Phase 1 không bật Stage C/D, không dùng `text_draft`, không dùng `ocr_context_light`.
+`inference_test.json` đọc `/mnt/data/rukopys/test/metadata.jsonl` và tạo file submission tại `artifacts/main_pipeline/phase1/submissions/submission_phase1.csv`.

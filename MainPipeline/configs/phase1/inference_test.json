@@ -1,10 +1,10 @@
 {
   "input": {
-    "metadata_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+    "metadata_path": "/mnt/data/rukopys/test/metadata.jsonl",
     "image_roots": [
-      "/mnt/data/rukopys/train",
-      "/mnt/data/rukopys/train/images",
-      "dataset/train"
+      "/mnt/data/rukopys/test",
+      "/mnt/data/rukopys/test/images",
+      "dataset/test"
     ]
   },
   "model": {
@@ -28,10 +28,11 @@
     "crop_pad_ratio": 0.02
   },
   "output": {
-    "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_validation_predictions.csv",
-    "raw_outputs_jsonl": "artifacts/main_pipeline/phase1/predictions/phase1_validation_raw_outputs.jsonl",
-    "runtime_summary_json": "artifacts/main_pipeline/phase1/predictions/phase1_runtime_summary.json",
-    "crops_dir": "artifacts/main_pipeline/phase1/predictions/crops_tmp",
+    "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_test_predictions_debug.csv",
+    "submission_csv": "artifacts/main_pipeline/phase1/submissions/submission_phase1.csv",
+    "raw_outputs_jsonl": "artifacts/main_pipeline/phase1/predictions/phase1_test_raw_outputs.jsonl",
+    "runtime_summary_json": "artifacts/main_pipeline/phase1/predictions/phase1_test_runtime_summary.json",
+    "crops_dir": "artifacts/main_pipeline/phase1/predictions/test_crops_tmp",
     "checkpoint_every": 5
   }
 }
