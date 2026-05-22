@@ -2,7 +2,8 @@
   "input": {
     "metadata_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
     "image_roots": [
-      "/mnt/datasets/rukopys/train",
+      "/mnt/data/rukopys/train",
+      "/mnt/data/rukopys/train/images",
       "dataset/train"
     ]
   },

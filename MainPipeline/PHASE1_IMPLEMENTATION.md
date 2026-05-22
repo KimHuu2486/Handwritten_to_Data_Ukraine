@@ -29,7 +29,77 @@ artifacts/main_pipeline/
 
 `artifacts/main_pipeline/` đã được ignore trong git vì sẽ chứa crops, adapters, raw outputs và scores.
 
-## 2. Build dữ liệu
+## 2. Chuẩn bị VM: thư viện và đường dẫn
+
+Luôn chạy các lệnh từ repo root để mọi relative path trong config được resolve đúng.
+
+### 2.1. Thư viện cần có
+
+Cài PyTorch theo đúng CUDA/driver của VM trước. Với A6000 48GB, ưu tiên CUDA build chính thức tương thích với driver đang có trên VM.
+
+Các package Python Phase 1 cần dùng:
+
+```text
+torch
+torchvision
+torchaudio
+transformers
+accelerate
+datasets
+trl
+peft
+qwen-vl-utils
+pillow
+pandas
+pyyaml
+safetensors
+sentencepiece
+```
+
+Gợi ý cài các package không phụ thuộc CUDA:
+
+```text
+python -m pip install -U transformers accelerate datasets trl peft qwen-vl-utils pillow pandas pyyaml safetensors sentencepiece
+```
+
+`bitsandbytes` chỉ cần cài nếu bật `model_load.load_in_4bit=true`. Mặc định Phase 1 trên A6000 đang dùng FP16 + SDPA, nên chưa cần `bitsandbytes` hoặc `flash-attn`.
+
+### 2.2. Các file cần chỉnh nếu path trên VM khác
+
+| Nhóm | File | Field cần kiểm tra/chỉnh |
+| --- | --- | --- |
+| Silver dataset | `MainPipeline/configs/phase1/build_silver_a1.json` | `metadata_path`, `image_roots` |
+| Silver dataset | `MainPipeline/configs/phase1/build_silver_b1.json` | `metadata_path`, `image_roots`, `crops_dir` nếu muốn lưu crop ra ổ khác |
+| Gold dataset | `MainPipeline/configs/phase1/build_gold_a1.json` | `metadata_path`, `image_roots` |
+| Gold dataset | `MainPipeline/configs/phase1/build_gold_b1.json` | `metadata_path`, `image_roots`, `crops_dir` nếu muốn lưu crop ra ổ khác |
+| Mix dataset | `MainPipeline/configs/phase1/mix_silver_b1_only.json` | `inputs[].path`, `output_train_jsonl`, `output_val_jsonl` nếu đổi thư mục artifacts |
+| Mix dataset | `MainPipeline/configs/phase1/mix_silver_a1_only.json` | `inputs[].path`, `output_train_jsonl`, `output_val_jsonl` nếu đổi thư mục artifacts |
+| Mix dataset | `MainPipeline/configs/phase1/mix_silver.json` | `inputs[].path`, `output_train_jsonl`, `output_val_jsonl` nếu đổi thư mục artifacts |
+| Mix dataset | `MainPipeline/configs/phase1/mix_gold.json` | `inputs[].path`, `exclude_manifest_path`, `output_train_jsonl`, `output_val_jsonl` nếu đổi thư mục artifacts |
+| Train | `MainPipeline/configs/phase1/train_silver_b1_a6000.json` | `model.base_model_path`, `training.output_dir`, `training.final_adapter_dir` |
+| Train | `MainPipeline/configs/phase1/train_silver_a1_a6000.json` | `model.base_model_path`, `model.resume_adapter_path`, `training.output_dir`, `training.final_adapter_dir` |
+| Train | `MainPipeline/configs/phase1/train_silver_a6000.json` | `model.base_model_path`, `model.resume_adapter_path`, `training.output_dir`, `training.final_adapter_dir` |
+| Train | `MainPipeline/configs/phase1/train_gold_a6000.json` | `model.base_model_path`, `model.resume_adapter_path`, `training.output_dir`, `training.final_adapter_dir` |
+| Inference | `MainPipeline/configs/phase1/inference_val.json` | `input.metadata_path`, `input.image_roots`, `model.base_model_path`, `model.adapter_path`, `output.*` nếu đổi thư mục artifacts |
+| Validate | `MainPipeline/configs/phase1/validate_val.json` | `manifest_path`, `predictions_csv`, `metric_notebook_path`, `metric_module_path`, `score_json` |
+| Analyze | `MainPipeline/configs/phase1/analyze_val.json` | `manifest_path`, `predictions_csv`, `source_breakdown_csv`, `type_breakdown_csv` |
+
+Path mặc định hiện đang giả định:
+
+```text
+Qwen3-VL-8B-Instruct: /mnt/models/Qwen3-VL-8B-Instruct
+Dataset root: /mnt/data/rukopys
+Gold images/metadata: /mnt/data/rukopys/train
+Silver images/metadata: /mnt/data/rukopys/silver
+Frozen validation: artifacts/manifests/frozen_validation_manifest.v1.jsonl
+Phase 1 artifacts: artifacts/main_pipeline/phase1/
+```
+
+Các config Phase 1 đã dùng đúng thư mục `silver`.
+
+`model.resume_adapter_path` ở các stage sau nên giữ đúng checkpoint stage trước nếu train tuần tự theo runbook. Chỉ chỉnh field này khi bạn copy adapter sang một thư mục khác.
+
+## 3. Build dữ liệu
 
 Silver warm-up:
 
@@ -49,9 +119,9 @@ python -m MainPipeline.src.phase1.build_b1_crop_dataset --config MainPipeline/co
 python -m MainPipeline.src.phase1.mix_phase1_tasks --config MainPipeline/configs/phase1/mix_gold.json
 ```
 
-## 3. Train trên A6000
+## 4. Train trên A6000
 
-Trước khi train trên VM, chỉnh `model.base_model_path` trong các config train cho đúng đường dẫn model thực tế.
+Trước khi train trên VM, kiểm tra lại `model.base_model_path` trong các config train cho đúng đường dẫn Qwen3-VL-8B-Instruct thực tế.
 
 ```text
 python -m MainPipeline.src.phase1.train_phase1 --config MainPipeline/configs/phase1/train_silver_b1_a6000.json
@@ -62,7 +132,7 @@ python -m MainPipeline.src.phase1.train_phase1 --config MainPipeline/configs/pha
 
 Profile mặc định là FP16 LoRA cho A6000 48GB. Chỉ nên dùng 4-bit như fallback khi VM bị OOM.
 
-## 4. Validate
+## 5. Validate
 
 Nếu final adapter không nằm ở path mặc định, chỉnh `model.adapter_path` trong `inference_val.json`.
 
@@ -78,11 +148,10 @@ Chạy smoke test nhanh:
 python -m MainPipeline.src.phase1.infer_phase1 --config MainPipeline/configs/phase1/inference_val.json --limit 2
 ```
 
-## 5. Guardrail Phase 1
+## 6. Guardrail Phase 1
 
 - Stage A target chỉ có `bbox,type`.
 - Stage B không sửa bbox hoặc type.
 - `image` và `graph` luôn trả text rỗng.
 - Stage C và Stage D không được gọi trong Phase 1.
 - Stage E chỉ sort, normalize schema, preserve markers và enforce structural empty text.
-

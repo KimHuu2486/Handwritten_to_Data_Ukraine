@@ -1,7 +1,8 @@
 {
-  "metadata_path": "dataset/train/metadata.jsonl",
+  "metadata_path": "/mnt/data/rukopys/train/metadata.jsonl",
   "image_roots": [
-    "/mnt/datasets/rukopys/train",
+    "/mnt/data/rukopys/train",
+    "/mnt/data/rukopys/train/images",
     "dataset/train"
   ],
   "crops_dir": "artifacts/main_pipeline/phase1/datasets/crops/gold_b1",
@@ -13,4 +14,3 @@
   "crop_pad_ratio": 0.02,
   "max_pixels_crop": 262144
 }
-

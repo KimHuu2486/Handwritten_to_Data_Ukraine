@@ -1,8 +1,9 @@
 {
-  "metadata_path": "dataset/sliver/metadata.jsonl",
+  "metadata_path": "/mnt/data/rukopys/silver/metadata.jsonl",
   "image_roots": [
-    "/mnt/datasets/rukopys/silver",
-    "dataset/sliver"
+    "/mnt/data/rukopys/silver",
+    "/mnt/data/rukopys/silver/images",
+    "dataset/silver"
   ],
   "crops_dir": "artifacts/main_pipeline/phase1/datasets/crops/silver_b1",
   "output_jsonl": "artifacts/main_pipeline/phase1/datasets/silver_b1_crop_ocr.jsonl",
@@ -13,4 +14,3 @@
   "crop_pad_ratio": 0.02,
   "max_pixels_crop": 262144
 }
-

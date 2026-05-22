@@ -24,11 +24,20 @@ validate_val.json
 analyze_val.json
 ```
 
-Trên VM, chỉnh các path sau cho đúng mount thực tế:
+Path VM mặc định hiện tại:
+
+- Model: `/mnt/models/Qwen3-VL-8B-Instruct`
+- Dataset root: `/mnt/data/rukopys`
+- Gold metadata/images: `/mnt/data/rukopys/train/metadata.jsonl`, `/mnt/data/rukopys/train/images`
+- Silver metadata/images: `/mnt/data/rukopys/silver/metadata.jsonl`, `/mnt/data/rukopys/silver/images`
+
+Nếu VM khác mount, chỉnh các path sau:
 
 - `model.base_model_path`
 - `metadata_path`
 - `image_roots`
 - `model.adapter_path` trong inference
+
+Lưu ý: các config Phase 1 dùng đúng thư mục `silver`.
 
 Phase 1 không bật Stage C/D, không dùng `text_draft`, không dùng `ocr_context_light`.
