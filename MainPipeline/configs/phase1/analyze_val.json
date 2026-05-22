@@ -1,0 +1,7 @@
+{
+  "manifest_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+  "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_validation_predictions.csv",
+  "source_breakdown_csv": "artifacts/main_pipeline/phase1/error_reports/phase1_source_breakdown.csv",
+  "type_breakdown_csv": "artifacts/main_pipeline/phase1/error_reports/phase1_type_breakdown.csv"
+}
+

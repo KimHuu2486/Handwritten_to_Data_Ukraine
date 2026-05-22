@@ -8,3 +8,4 @@ phaseB2/b2_runtime_config.json
 phaseB2/kaggle_metric.py
 artifacts/baseline_predictions_cache/
 artifacts/ablations/
+artifacts/main_pipeline/

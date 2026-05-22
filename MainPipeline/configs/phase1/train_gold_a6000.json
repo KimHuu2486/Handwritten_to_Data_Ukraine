@@ -1,0 +1,60 @@
+{
+  "model": {
+    "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
+    "resume_adapter_path": "artifacts/main_pipeline/phase1/checkpoints/ckpt_phase1_silver"
+  },
+  "model_load": {
+    "load_in_4bit": false,
+    "torch_dtype": "float16",
+    "device_map": "auto",
+    "trust_remote_code": true,
+    "attn_implementation": "sdpa",
+    "low_cpu_mem_usage": true,
+    "gradient_checkpointing": true,
+    "trainable_params_float32": true
+  },
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "bias": "none",
+    "task_type": "CAUSAL_LM"
+  },
+  "data": {
+    "train_jsonl": "artifacts/main_pipeline/phase1/datasets/gold_train.jsonl",
+    "validation_jsonl": "artifacts/main_pipeline/phase1/datasets/gold_val.jsonl",
+    "max_length": 4096,
+    "mask_truncated_samples": true,
+    "fail_on_empty_label_batch": true,
+    "truncation_report_every": 100,
+    "assistant_marker": "<|im_start|>assistant\n"
+  },
+  "training": {
+    "output_dir": "artifacts/main_pipeline/phase1/checkpoints/gold",
+    "final_adapter_dir": "artifacts/main_pipeline/phase1/checkpoints/ckpt_phase1_gt_baseline",
+    "resume_checkpoint": null,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "per_device_eval_batch_size": 1,
+    "learning_rate": 1e-5,
+    "num_train_epochs": 1,
+    "fp16": false,
+    "bf16": false,
+    "optim": "adamw_torch",
+    "max_grad_norm": 0.3,
+    "warmup_ratio": 0.03,
+    "logging_steps": 10,
+    "eval_strategy": "steps",
+    "eval_steps": 100,
+    "save_strategy": "steps",
+    "save_steps": 100,
+    "save_total_limit": 2,
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "eval_loss",
+    "greater_is_better": false,
+    "report_to": "none",
+    "gradient_checkpointing": true,
+    "use_liger_kernel": false
+  }
+}

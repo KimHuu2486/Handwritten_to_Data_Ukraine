@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "val_ratio": 0.02,
+  "total_samples": null,
+  "exclude_manifest_path": null,
+  "inputs": [
+    {
+      "path": "artifacts/main_pipeline/phase1/datasets/silver_b1_crop_ocr.jsonl",
+      "weight": 1.0,
+      "max_samples": null
+    }
+  ],
+  "output_train_jsonl": "artifacts/main_pipeline/phase1/datasets/silver_b1_train.jsonl",
+  "output_val_jsonl": "artifacts/main_pipeline/phase1/datasets/silver_b1_val.jsonl",
+  "stats_json": "artifacts/main_pipeline/phase1/datasets/silver_b1_mix.stats.json"
+}
+

@@ -1,0 +1,14 @@
+{
+  "metadata_path": "dataset/train/metadata.jsonl",
+  "image_roots": [
+    "/mnt/datasets/rukopys/train",
+    "dataset/train"
+  ],
+  "output_jsonl": "artifacts/main_pipeline/phase1/datasets/gold_a1_layout.jsonl",
+  "stats_json": "artifacts/main_pipeline/phase1/datasets/gold_a1_layout.stats.json",
+  "max_records": null,
+  "skip_missing_images": true,
+  "grid_size": 1000,
+  "max_pixels_page": 850000
+}
+

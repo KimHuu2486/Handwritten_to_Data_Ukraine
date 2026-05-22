@@ -5,6 +5,7 @@
 - **Muc tieu phu:** Chuan bi huong nghien cuu VLM + CoT theo lo trinh cache-first, ablation ladder, routing/refine va hau xu ly.
 - **Trang thai hien tai:** Dang o Phase B2, dong thoi da chot va tai cau truc `NewPipeline/pipeline.md` cho pipeline competition-first retrain tu baseline. Frozen validation manifest v1 da pass gate; B2 baseline anchor `b2_stage2_gold__crop-none__prompt-v1__val-v1` da co cache/score va da lock vao `artifacts/ablations/ablation_results.csv`.
 - **Huong pipeline moi:** Stage A gom source-aware layout + deterministic `page_context_light` -> Stage B type-aware OCR voi `ocr_context_light` -> Stage C weighted risk gate -> Stage D multi-view/refine voi `risk_rerank_context_light` -> Stage E metric-aware assembly.
+- **MainPipeline Phase 1:** Da chot contract Phase 1 chi bat Stage A layout-only, Stage B crop OCR va Stage E assembly/schema guardrail; Stage C/D chua bat trong Phase 1.
 - **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; batch 24 da chay trong `tmux` nhung CUDA driver `free` giam dan sau moi batch, nen batch 24 chi xem la aggressive/benchmark, khong mac dinh production-safe.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
@@ -14,6 +15,7 @@
 - **Thu vien/chay may:** Python, PyTorch, Transformers, TRL/SFTTrainer, PEFT LoRA/QLoRA, bitsandbytes khi can 4-bit fallback, qwen-vl-utils, Hugging Face Hub, PIL, pandas, multiprocessing.
 - **Model chinh:** Qwen3-VL-8B cho detection+transcription end-to-end; Qwen2.5-1.5B-Instruct cho spell-check text hau xu ly.
 - **Runtime B2 tren A6000:** Uu tien FP16 (`load_in_4bit=false`) va batch page generation; batch 16/12 la fallback on dinh hon, batch 24 chi dung khi chap nhan rui ro VRAM do CUDA workspace/free-memory drift; 4-bit chi la fallback khi OOM/GPU nho.
+- **MainPipeline Phase 1 runtime:** Cau hinh rieng cho RTX A6000 48GB, Qwen3-VL + LoRA qua TRL `SFTTrainer`; model load FP16, LoRA trainable params FP32, co 4-bit fallback neu OOM.
 - **VM operation:** Dung `tmux` de giu job khi mat SSH/internet; log baseline ghi qua `tee` vao `logs/`.
 - **Metric:** IoU matching, class accuracy, CER/PageCER, text normalization theo official-compatible metric.
 
@@ -46,6 +48,21 @@
 - [x] Lam ro contextual OCR: Stage B dung `ocr_context_light` mac dinh; page thumbnail chi la visual fallback cho hard examples/high-risk regions.
 - [x] Lam ro Stage D multi-view refinement: original crop, zoom crop, expanded context crop, optional page thumbnail + `risk_rerank_context_light`, kem guardrail chong hallucination tu context.
 - [x] Tai cau truc `NewPipeline/pipeline.md` de de doc hon: gop Stage A/A+ thanh mot Stage A va chuan hoa Stage B/C/D/E theo dang contract/flow/table.
+- [x] Tach noi dung Phase 1/2/3 tu plan sang `MainPipeline/finetune_phase1.md`, `finetune_phase2.md`, `finetune_phase3.md` va dong bo voi `MainPipeline/pipeline.md`.
+- [x] Cai dat `MainPipeline` Phase 1 thanh package Python co `src/common` va `src/phase1`, chay duoc bang `python -m MainPipeline.src.phase1...`.
+- [x] Them common utilities cho Phase 1: IO/config, schema/type policy, bbox grid 0-1000 <-> pixel, JSON parse robust, scoring official-compatible va prompt registry.
+- [x] Them data builders Phase 1: build A1 layout-only dataset, build B1 crop OCR dataset, mix train/val theo weight va exclude frozen validation manifest.
+- [x] Them trainer Phase 1 cho Qwen3-VL LoRA/SFTTrainer: lazy import heavy deps, resume adapter/checkpoint, data collator vision-chat, prompt masking va truncation guard.
+- [x] Them inference Phase 1 A -> B -> E: Stage A full-page layout, Stage B per-crop OCR, skip OCR cho `image/graph`, normalize bbox ve pixel anh goc va ghi CSV/JSONL.
+- [x] Them validate/analyze scripts cho Phase 1: score JSON, breakdown theo source/type va error report.
+- [x] Tao config Phase 1 cho silver/gold build, mix, train tren A6000, inference validation, validate va analyze.
+- [x] Cau hinh train Phase 1 luu best checkpoint theo `eval_loss`: `load_best_model_at_end=true`, `metric_for_best_model=eval_loss`, `greater_is_better=false`.
+- [x] Them callback log train Phase 1: train/eval loss, lr, epoch, step, elapsed, ETA, sec/step, steps/sec, VRAM, checkpoint path, `best_metric` va `best_model_checkpoint`.
+- [x] Tang `max_new_tokens_stage_b` len 1024 cho inference validation de xu ly bang/vung OCR dai hon.
+- [x] Dong bo prompt runtime voi pipeline: bo sung source hints sat hon va mo rong instruction cho `formula`/`table` de tranh solve/simplify/infer sai.
+- [x] Viet `MainPipeline/PHASE1_IMPLEMENTATION.md` bang tieng Viet kem runbook build data, train, inference, validate, analyze va guardrail.
+- [x] Them `artifacts/main_pipeline/` vao `.gitignore`; coi dataset build, crops, predictions, checkpoints va score la generated artifacts khong commit.
+- [x] Smoke test Phase 1 local voi gold sample: build A1/B1, mix gold train/val, check CLI `--help` va py_compile pass.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/khong nhat quan bbox format** -> **Fix:** Chuan hoa ve `[x1, y1, x2, y2]`, ho tro normalized, pixel va 0-1000 grid.
@@ -69,6 +86,11 @@
 - **Doc issue 19: `text_draft` co nguy co anchor sai Stage B OCR** -> **Fix:** Tach `ocr_context_light` khong chua draft; draft chi vao `risk_rerank_context_light` cho risk/rerank sau OCR.
 - **Doc issue 20: OR-rule high-risk refine qua nhieu vung** -> **Fix:** Doi sang weighted `risk_score`, refine theo threshold/top-K/hard override va `hard_cap`.
 - **Doc issue 21: `pipeline.md` trinh bay Stage A-E bi roi, A/A+ tach qua vun** -> **Fix:** Gop A/A+ thanh Stage A duy nhat va sap lai Stage B-E thanh cac contract ro input/output, flow, policy va guardrail.
+- **MainPipeline issue 22: Phase 1 de bi hieu nham la da bat Stage C/D** -> **Fix:** Chot va ghi ro Phase 1 chi gom Stage A layout-only, Stage B crop OCR, Stage E assembly; Stage C/D de sang Phase 2/3.
+- **MainPipeline issue 23: Prompt runtime ngan hon spec pipeline** -> **Fix:** Mo rong source hints va formula/table instructions trong `src/common/prompts.py` de sat `pipeline.md` hon.
+- **MainPipeline issue 24: Stage B OCR co the bi cat token voi bang lon** -> **Fix:** Tang `max_new_tokens_stage_b` tu 512 len 1024 trong `inference_val.json`.
+- **MainPipeline issue 25: Can log train ro hon va luu checkpoint tot nhat** -> **Fix:** Bat `load_best_model_at_end` theo `eval_loss`, can bang `eval_steps/save_steps`, in checkpoint saved path va best metric khi ket thuc.
+- **MainPipeline issue 26: Artifact sinh ra trong repo de gay nham lan voi source** -> **Fix:** Chuan hoa output vao `artifacts/main_pipeline/phase1` va ignore `artifacts/main_pipeline/` trong git.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
 - [ ] Sau khi B2 VM run ket thuc, verify `validation_predictions.csv`, `validation_raw_outputs.jsonl`, row count 159, score summary, runtime summary va checksum truoc khi dung cho Phase C.
@@ -85,11 +107,20 @@
 - [ ] Cap nhat inference v2: source-aware layout, deterministic `page_context_light`, `ocr_context_light`, type-aware crop OCR, weighted risk score, multi-view refinement va Stage E assembly.
 - [ ] Them validation/ablation cho prompt v2: layout-only vs layout+draft, source/type breakdown, formula/table oversampling, contextual OCR vs crop-only, `page_context_light` vs optional thumbnail.
 - [ ] Thiet ke data builder cho `page_context_light`, `ocr_context_light`, `risk_rerank_context_light` va region ids; dam bao khong dua `text_draft` vao Stage B first-pass OCR.
+- [ ] Chay full Phase 1 tren VM A6000: build silver/gold datasets, train curriculum B1 -> A1 -> silver mix -> gold mix, theo doi loss/log/checkpoint.
+- [ ] Chay Phase 1 validation inference tren frozen val, tinh score va xem breakdown source/type truoc khi quyet dinh Phase 2.
+- [ ] Neu OCR crop dai van bi truncation, can nhac tang `max_new_tokens_stage_b` tiep hoac tach table/region lon bang refine policy o Phase 2.
+- [ ] Neu can production hardening, them guardrail phat hien bbox raw pixel >1000 do model khong tuan grid va fallback normalize rieng.
 
 ## 6. 📂 Cấu trúc thư mục cốt lõi (Core Structure)
 - `baseline/`: Baseline zero-shot va ket qua submit tham chieu.
 - `finetune/`: Notebook Stage 1/2, inference/submission hai-pass, train LoRA, spell-check va ket qua fine-tune.
 - `phaseB2/`: Runner `.py only` cho B2 baseline cache, readiness check, config template, metric/cache helpers, FP16/batch runtime diagnostics.
+- `MainPipeline/`: Pipeline retrain moi; chua docs Phase 1/2/3, configs, prompts, scripts build/train/infer/validate/analyze cho Phase 1.
+- `MainPipeline/src/common/`: IO/config, schema, bbox, prompts, JSON parse va scoring utilities dung chung.
+- `MainPipeline/src/phase1/`: Data builders, mixer, trainer, inference, validation va error analysis cho Phase 1.
+- `MainPipeline/configs/phase1/`: Config build/mix/train/infer/validate/analyze, toi uu cho VM A6000 48GB.
+- `artifacts/main_pipeline/phase1/`: Generated artifacts cua MainPipeline Phase 1 nhu JSONL dataset, crops, predictions, checkpoints, scores va reports; khong commit.
 - `NewPipeline/pipeline.md`: Thiet ke pipeline competition-first moi voi Stage A-E dang contract; Stage A gom layout + deterministic context, Stage B OCR, Stage C risk gate, Stage D refinement, Stage E assembly.
 - `artifacts/manifests/`: Frozen validation manifest v1, config va gate report.
 - `artifacts/baseline_predictions_cache/`: Cache predictions/raw outputs/scores cho B2 baseline va smoke runs.

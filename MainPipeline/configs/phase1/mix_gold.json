@@ -1,0 +1,22 @@
+{
+  "seed": 43,
+  "val_ratio": 0.05,
+  "total_samples": null,
+  "exclude_manifest_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+  "inputs": [
+    {
+      "path": "artifacts/main_pipeline/phase1/datasets/gold_b1_crop_ocr.jsonl",
+      "weight": 0.65,
+      "max_samples": null
+    },
+    {
+      "path": "artifacts/main_pipeline/phase1/datasets/gold_a1_layout.jsonl",
+      "weight": 0.35,
+      "max_samples": null
+    }
+  ],
+  "output_train_jsonl": "artifacts/main_pipeline/phase1/datasets/gold_train.jsonl",
+  "output_val_jsonl": "artifacts/main_pipeline/phase1/datasets/gold_val.jsonl",
+  "stats_json": "artifacts/main_pipeline/phase1/datasets/gold_mix.stats.json"
+}
+

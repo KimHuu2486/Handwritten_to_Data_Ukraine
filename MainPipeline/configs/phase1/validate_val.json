@@ -1,0 +1,8 @@
+{
+  "manifest_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+  "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_validation_predictions.csv",
+  "metric_notebook_path": "official-evaluation-metric-text-normalization.ipynb",
+  "metric_module_path": "artifacts/main_pipeline/phase1/metrics/kaggle_metric.py",
+  "score_json": "artifacts/main_pipeline/phase1/scores/phase1_score_summary.json"
+}
+

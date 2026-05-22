@@ -1,0 +1,14 @@
+{
+  "metadata_path": "dataset/sliver/metadata.jsonl",
+  "image_roots": [
+    "/mnt/datasets/rukopys/silver",
+    "dataset/sliver"
+  ],
+  "output_jsonl": "artifacts/main_pipeline/phase1/datasets/silver_a1_layout.jsonl",
+  "stats_json": "artifacts/main_pipeline/phase1/datasets/silver_a1_layout.stats.json",
+  "max_records": null,
+  "skip_missing_images": true,
+  "grid_size": 1000,
+  "max_pixels_page": 850000
+}
+

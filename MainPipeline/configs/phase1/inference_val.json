@@ -1,0 +1,35 @@
+{
+  "input": {
+    "metadata_path": "artifacts/manifests/frozen_validation_manifest.v1.jsonl",
+    "image_roots": [
+      "/mnt/datasets/rukopys/train",
+      "dataset/train"
+    ]
+  },
+  "model": {
+    "base_model_path": "/mnt/models/Qwen3-VL-8B-Instruct",
+    "adapter_path": "artifacts/main_pipeline/phase1/checkpoints/ckpt_phase1_gt_baseline"
+  },
+  "model_load": {
+    "load_in_4bit": false,
+    "torch_dtype": "float16",
+    "device": "cuda:0",
+    "trust_remote_code": true,
+    "attn_implementation": "sdpa",
+    "low_cpu_mem_usage": true
+  },
+  "generation": {
+    "max_pixels_page": 850000,
+    "max_pixels_crop": 262144,
+    "max_new_tokens_stage_a": 2048,
+    "max_new_tokens_stage_b": 1024,
+    "crop_pad_ratio": 0.02
+  },
+  "output": {
+    "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_validation_predictions.csv",
+    "raw_outputs_jsonl": "artifacts/main_pipeline/phase1/predictions/phase1_validation_raw_outputs.jsonl",
+    "runtime_summary_json": "artifacts/main_pipeline/phase1/predictions/phase1_runtime_summary.json",
+    "crops_dir": "artifacts/main_pipeline/phase1/predictions/crops_tmp",
+    "checkpoint_every": 5
+  }
+}
