@@ -1,0 +1,9 @@
+# Runtime dependencies for loading and running the Table branch with DocLayoutYOLO.
+# For CUDA builds, install torch/torchvision first from the matching PyTorch wheel index.
+torch>=2.0.0
+torchvision>=0.15.0
+Pillow
+numpy
+opencv-python-headless
+doclayout-yolo
+ultralytics>=8.2.0

@@ -1,2 +1,138 @@
+# Codex / local agent files
 .agents/
 skills-lock.json
+
+# Python / runtime
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+venv_*/
+.conda/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Secrets / credentials
+.env
+.env.*
+kaggle.json
+secrets.json
+*.pem
+*.key
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Large ML model weights and exported models
+*.pth
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+*.onnx
+*.pb
+*.h5
+*.tflite
+*.engine
+*.plan
+
+# Hugging Face / model artifact files
+# These are model-package files, not source code, when they live inside model dirs.
+**/unimernet_base/**
+**/unimernet_finetuned*/**
+**/trocr-finetuned*/**
+**/trocr-final-gold/**
+**/cyrillic-htr-model-local/**
+
+# Old local model locations
+Formula_branch/unimernet_base/**
+Formula_branch/unimernet_finetuned*/**
+HPA_Branch/cyrillic-htr-model-local/**
+HPA_Branch/trocr-final-gold/**
+Table_branch/*.pt
+
+# New local model locations
+branch-formula/unimernet_base/**
+branch-formula/unimernet_finetuned*/**
+branch-hpa/trocr-finetuned*/**
+branch-table/**/*.pt
+
+# Keep only lightweight docs, download links, and reproducibility scripts in model dirs
+!**/unimernet_base/
+!**/unimernet_base/README.md
+!**/unimernet_base/link-*.txt
+!**/unimernet_finetuned*/
+!**/unimernet_finetuned*/README.md
+!**/unimernet_finetuned*/link-*.txt
+!**/unimernet_finetuned*/training*.md
+!**/unimernet_finetuned*/requirements*.txt
+!**/unimernet_finetuned*/setup*.sh
+!**/unimernet_finetuned*/prepare*.py
+!**/unimernet_finetuned*/train*.py
+!**/trocr-finetuned*/
+!**/trocr-finetuned*/README.md
+!**/trocr-finetuned*/link-*.txt
+!**/trocr-finetuned*/requirements*.txt
+
+# Training outputs / experiment trackers
+checkpoints/
+checkpoint*/
+**/checkpoints/
+**/checkpoint*/
+runs/
+wandb/
+mlruns/
+lightning_logs/
+tensorboard/
+outputs/
+output/
+artifacts/
+
+# Model/cache directories
+.cache/
+**/.cache/
+huggingface/
+hf_cache/
+transformers_cache/
+torch_cache/
+
+# Dataset / generated data
+# Keep these ignored unless the competition explicitly requires committing small metadata only.
+datasets/
+data/
+raw/
+processed/
+*.parquet
+*.arrow
+
+# Generated submissions
+submission.csv
+submission_*.csv
+
+# General lightweight files that are safe to track outside model artifact dirs
+!README.md
+!**/README.md
+!**/*.md

@@ -1,0 +1,12 @@
+# Runtime dependencies for loading and running the HPA branch with TrOCR.
+# For CUDA builds, install torch first from the matching PyTorch wheel index.
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+Pillow
+tqdm
+jiwer
+tokenizers>=0.19.1,<0.20
+safetensors>=0.4.3
+huggingface-hub>=0.23.0
+accelerate>=0.31.0

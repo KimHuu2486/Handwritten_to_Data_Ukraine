@@ -1,0 +1,17 @@
+# Runtime dependencies for loading and running the Formula branch with UniMERNet.
+# For CUDA builds, install torch/torchvision first from the matching PyTorch wheel index.
+torch>=2.0.0
+torchvision>=0.15.0
+unimernet==0.2.3
+transformers==4.42.4
+timm==0.9.16
+numpy==1.26.4
+omegaconf==2.3.0
+PyYAML>=6.0.1
+Pillow>=10.0.0
+tqdm>=4.66.0
+regex
+albumentations==1.4.24
+opencv-python-headless==4.11.0.86
+fairscale>=0.4.13
+einops>=0.7.0
