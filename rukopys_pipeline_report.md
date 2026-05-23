@@ -15,22 +15,31 @@ Pipeline sử dụng cơ chế routing theo loại region trong metadata:
 - `table` -> nhánh Table/DocLayoutYOLO + OCR từng cell.
 
 ```mermaid
-graph TD
-    A[Image Page + metadata.jsonl] --> B{Region Type}
-    B -->|handwritten / printed / annotation| C[HPA Branch: TrOCR]
-    B -->|formula| D[Formula Branch: UniMERNet]
-    B -->|table| E[Table Branch: DocLayoutYOLO]
+flowchart LR
+    A[Test metadata] --> B{Region type}
 
-    E --> F[Detect / Crop Cells]
-    F --> G{Cell Type}
-    G -->|text-like| C
-    G -->|formula-like| D
+    B -->|handwritten / printed / annotation| C[TrOCR HPA]
+    B -->|formula| D[UniMERNet]
+    B -->|table| E[DocLayoutYOLO detect cells]
+    B -->|image / graph| F[Empty text]
 
-    C --> H[Text Prediction]
-    D --> I[Formula Prediction]
-    H --> J[Merge Results]
-    I --> J
-    J --> K[submission.csv]
+    E --> G[Detected cells]
+    G --> H{Cell routing}
+
+    H -->|text cell| C
+    H -->|formula cell| D
+
+    C --> I[Cell / Region text]
+    D --> I
+    F --> I
+
+    I --> J{From table?}
+
+    J -->|Yes| K[Reconstruct table as PSV]
+    J -->|No| L[Final region text]
+
+    K --> L
+    L --> M[submission.csv]
 ```
 
 ---
