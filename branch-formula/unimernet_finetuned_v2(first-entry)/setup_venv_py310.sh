@@ -40,7 +40,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # Install torch first so CUDA wheels are selected explicitly.
 python -m pip install --index-url "${TORCH_INDEX_URL}" torch torchvision
-python -m pip install -r requirements_unimernet_py310.txt
+python -m pip install -r unimernet-requirements.txt
 
 # UniMERNet declares opencv-python as a dependency, which can install the GUI
 # OpenCV wheel. Headless GPU servers often do not have libGL.so.1, so force the
