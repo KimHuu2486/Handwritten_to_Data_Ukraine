@@ -46,6 +46,17 @@ def configure_transformers_logging(cfg: dict[str, Any]) -> None:
     setter()
 
 
+def diagnostic_enabled(cfg: dict[str, Any]) -> bool:
+    """Return True when verbose inference diagnostics are enabled."""
+    return bool(cfg.get("logging", {}).get("diagnostic_progress", False))
+
+
+def diagnostic_log(cfg: dict[str, Any], message: str) -> None:
+    """Print optional low-volume diagnostics for long-running generation calls."""
+    if diagnostic_enabled(cfg):
+        print(message, flush=True)
+
+
 def dtype_from_name(torch, name: str):
     """Map config dtype strings to torch dtype objects."""
     lowered = str(name).lower()
@@ -304,51 +315,16 @@ def ensure_image_size(row: dict[str, Any], image_path: Path) -> dict[str, Any]:
         return enriched
 
 
-def prepare_page_ocr_jobs(
+def build_page_state_from_regions(
     cfg: dict[str, Any],
-    runtime: tuple[Any, ...],
     row: dict[str, Any],
     image_path: Path,
     crops_dir: Path,
-    raw_outputs_path: Path,
-    external_layout_regions: list[dict[str, Any]] | None = None,
-) -> tuple[dict[str, Any] | None, bool, str | None]:
-    """Build one page layout/crop state and defer Stage B OCR to a shared batch."""
-    torch, process_vision_info, model, processor, device = runtime
+    regions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Create page state and crop OCR jobs from normalized layout regions."""
     generation_cfg = cfg["generation"]
     source = str(row.get("source", "unknown"))
-    image_width = int(row.get("image_width", 1))
-    image_height = int(row.get("image_height", 1))
-
-    if external_layout_regions is None:
-        stage_a_raw = generate_text(
-            torch,
-            process_vision_info,
-            model,
-            processor,
-            device,
-            image_path,
-            stage_a_prompt(source),
-            int(generation_cfg.get("max_pixels_page", 850000)),
-            int(generation_cfg.get("max_new_tokens_stage_a", 2048)),
-        )
-        append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
-        raw_layout, parse_error = extract_json_array(stage_a_raw)
-        if parse_error:
-            return None, False, parse_error
-        regions = normalize_layout_regions(raw_layout, image_width, image_height)
-    else:
-        regions = normalize_external_layout_regions(external_layout_regions, image_width, image_height)
-        append_jsonl(
-            raw_outputs_path,
-            {
-                "stage": "external_layout",
-                "file_name": row.get("file_name"),
-                "source": "external_layout_csv",
-                "raw_region_count": len(external_layout_regions),
-                "normalized_region_count": len(regions),
-            },
-        )
     page_state: dict[str, Any] = {
         "row": row,
         "final_regions": [None] * len(regions),
@@ -376,7 +352,176 @@ def prepare_page_ocr_jobs(
         )
     page_state["final_regions"] = final_regions
     page_state["pending_stage_b"] = pending_stage_b
-    return page_state, True, None
+    return page_state
+
+
+def prepare_page_ocr_jobs(
+    cfg: dict[str, Any],
+    runtime: tuple[Any, ...],
+    row: dict[str, Any],
+    image_path: Path,
+    crops_dir: Path,
+    raw_outputs_path: Path,
+    external_layout_regions: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any] | None, bool, str | None]:
+    """Build one page layout/crop state and defer Stage B OCR to a shared batch."""
+    torch, process_vision_info, model, processor, device = runtime
+    generation_cfg = cfg["generation"]
+    source = str(row.get("source", "unknown"))
+    image_width = int(row.get("image_width", 1))
+    image_height = int(row.get("image_height", 1))
+
+    if external_layout_regions is None:
+        image_name = Path(str(row.get("file_name", "image"))).name
+        max_pixels_page = int(generation_cfg.get("max_pixels_page", 850000))
+        max_new_tokens_stage_a = int(generation_cfg.get("max_new_tokens_stage_a", 2048))
+        diagnostic_log(
+            cfg,
+            f"[stage A start] image={image_name} source={source} "
+            f"size={image_width}x{image_height} max_pixels={max_pixels_page} "
+            f"max_new_tokens={max_new_tokens_stage_a}",
+        )
+        stage_a_started = time.perf_counter()
+        stage_a_raw = generate_text(
+            torch,
+            process_vision_info,
+            model,
+            processor,
+            device,
+            image_path,
+            stage_a_prompt(source),
+            max_pixels_page,
+            max_new_tokens_stage_a,
+        )
+        diagnostic_log(
+            cfg,
+            f"[stage A done] image={image_name} sec={time.perf_counter() - stage_a_started:.2f} "
+            f"chars={len(stage_a_raw)}",
+        )
+        append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
+        raw_layout, parse_error = extract_json_array(stage_a_raw)
+        if parse_error:
+            diagnostic_log(cfg, f"[stage A parse_failed] image={image_name} error={parse_error}")
+            return None, False, parse_error
+        regions = normalize_layout_regions(raw_layout, image_width, image_height)
+        diagnostic_log(cfg, f"[stage A parsed] image={image_name} regions={len(regions)}")
+    else:
+        regions = normalize_external_layout_regions(external_layout_regions, image_width, image_height)
+        append_jsonl(
+            raw_outputs_path,
+            {
+                "stage": "external_layout",
+                "file_name": row.get("file_name"),
+                "source": "external_layout_csv",
+                "raw_region_count": len(external_layout_regions),
+                "normalized_region_count": len(regions),
+            },
+        )
+    return build_page_state_from_regions(cfg, row, image_path, crops_dir, regions), True, None
+
+
+def run_stage_a_batch_jobs(
+    cfg: dict[str, Any],
+    runtime: tuple[Any, ...],
+    stage_a_results: list[dict[str, Any]],
+    crops_dir: Path,
+    raw_outputs_path: Path,
+) -> list[dict[str, Any]]:
+    """Run Stage A layout generation for multiple full pages, then build OCR jobs."""
+    if not stage_a_results:
+        return []
+    torch, process_vision_info, model, processor, device = runtime
+    generation_cfg = cfg["generation"]
+    max_pixels_page = int(generation_cfg.get("max_pixels_page", 850000))
+    max_new_tokens_stage_a = int(generation_cfg.get("max_new_tokens_stage_a", 2048))
+    stage_a_batch_size = max(int(generation_cfg.get("stage_a_batch_size", 1)), 1)
+    page_states: list[dict[str, Any]] = []
+
+    for batch in chunks(stage_a_results, stage_a_batch_size):
+        image_names = [str(item["image_name"]) for item in batch]
+        diagnostic_log(
+            cfg,
+            f"[stage A batch start] count={len(batch)} images={','.join(image_names)} "
+            f"max_pixels={max_pixels_page} max_new_tokens={max_new_tokens_stage_a}",
+        )
+        batch_started = time.perf_counter()
+        try:
+            batch_outputs = generate_text_batch(
+                torch,
+                process_vision_info,
+                model,
+                processor,
+                device,
+                [(item["image_path"], stage_a_prompt(str(item["row"].get("source", "unknown")))) for item in batch],
+                max_pixels_page,
+                max_new_tokens_stage_a,
+            )
+        except Exception as exc:
+            if hasattr(torch, "cuda") and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if len(batch) > 1 and bool(generation_cfg.get("stage_a_fallback_single", True)):
+                diagnostic_log(cfg, f"[stage A batch fallback] count={len(batch)} error={exc.__class__.__name__}")
+                for item in batch:
+                    page_states.extend(run_stage_a_batch_jobs(cfg, runtime, [item], crops_dir, raw_outputs_path))
+                continue
+            error_type = f"inference_exception:{exc.__class__.__name__}"
+            for result in batch:
+                result["error_type"] = error_type
+                result["parse_ok"] = False
+                append_jsonl(
+                    raw_outputs_path,
+                    {
+                        "stage": "page_error",
+                        "file_name": result["row"].get("file_name"),
+                        "image": result["image_name"],
+                        "error_type": error_type,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+            continue
+
+        diagnostic_log(
+            cfg,
+            f"[stage A batch done] count={len(batch)} sec={time.perf_counter() - batch_started:.2f} "
+            f"chars={','.join(str(len(text)) for text in batch_outputs)}",
+        )
+        for result, stage_a_raw in zip(batch, batch_outputs):
+            row = result["row"]
+            image_name = result["image_name"]
+            image_width = int(row.get("image_width", 1))
+            image_height = int(row.get("image_height", 1))
+            append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
+            raw_layout, parse_error = extract_json_array(stage_a_raw)
+            if parse_error:
+                result["error_type"] = parse_error
+                result["parse_ok"] = False
+                diagnostic_log(cfg, f"[stage A parse_failed] image={image_name} error={parse_error}")
+                continue
+            try:
+                regions = normalize_layout_regions(raw_layout, image_width, image_height)
+                page_state = build_page_state_from_regions(cfg, row, result["image_path"], crops_dir, regions)
+            except Exception as exc:
+                error_type = f"inference_exception:{exc.__class__.__name__}"
+                result["error_type"] = error_type
+                result["parse_ok"] = False
+                append_jsonl(
+                    raw_outputs_path,
+                    {
+                        "stage": "page_error",
+                        "file_name": row.get("file_name"),
+                        "image": image_name,
+                        "error_type": error_type,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+                continue
+            result["page_state"] = page_state
+            result["parse_ok"] = True
+            page_states.append(page_state)
+            diagnostic_log(cfg, f"[stage A parsed] image={image_name} regions={len(regions)}")
+    return page_states
 
 
 def run_stage_b_jobs(cfg: dict[str, Any], runtime: tuple[Any, ...], pending_stage_b: list[dict[str, Any]], raw_outputs_path: Path) -> None:
@@ -505,6 +650,7 @@ def main() -> int:
     generation_cfg = cfg.get("generation", {})
     checkpoint_every = int(cfg["output"].get("checkpoint_every", 5))
     image_batch_size = max(int(generation_cfg.get("image_batch_size", 1)), 1)
+    stage_a_batch_size = max(int(generation_cfg.get("stage_a_batch_size", 1)), 1)
     progress_every = max(int(cfg["output"].get("progress_every", generation_cfg.get("progress_every", 10))), 1)
     run_started = time.perf_counter()
     error_count = sum(1 for row in prediction_rows if row.get("error_type"))
@@ -514,6 +660,7 @@ def main() -> int:
     for row_batch in chunks(row_items, image_batch_size):
         batch_results: list[dict[str, Any]] = []
         page_states: list[dict[str, Any]] = []
+        stage_a_results: list[dict[str, Any]] = []
 
         for item in row_batch:
             row = item["row"]
@@ -542,21 +689,25 @@ def main() -> int:
 
             try:
                 enriched_row = ensure_image_size(row, image_path)
-                page_state, parse_ok, error_type = prepare_page_ocr_jobs(
-                    cfg,
-                    runtime,
-                    enriched_row,
-                    image_path,
-                    crops_dir,
-                    raw_outputs_path,
-                    external_layouts[layout_key] if external_layouts is not None else None,
-                )
                 result["row"] = enriched_row
-                result["parse_ok"] = parse_ok
-                result["error_type"] = error_type
-                if page_state is not None:
-                    result["page_state"] = page_state
-                    page_states.append(page_state)
+                result["image_path"] = image_path
+                if external_layouts is None:
+                    stage_a_results.append(result)
+                else:
+                    page_state, parse_ok, error_type = prepare_page_ocr_jobs(
+                        cfg,
+                        runtime,
+                        enriched_row,
+                        image_path,
+                        crops_dir,
+                        raw_outputs_path,
+                        external_layouts[layout_key],
+                    )
+                    result["parse_ok"] = parse_ok
+                    result["error_type"] = error_type
+                    if page_state is not None:
+                        result["page_state"] = page_state
+                        page_states.append(page_state)
             except Exception as exc:  # Keep long runs moving and preserve debug context.
                 error_type = f"inference_exception:{exc.__class__.__name__}"
                 result["error_type"] = error_type
@@ -566,6 +717,27 @@ def main() -> int:
                         "stage": "page_error",
                         "file_name": row.get("file_name"),
                         "image": image_name,
+                        "error_type": error_type,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+
+        try:
+            page_states.extend(run_stage_a_batch_jobs(cfg, runtime, stage_a_results, crops_dir, raw_outputs_path))
+        except Exception as exc:  # Keep long runs moving if shared Stage A preparation fails unexpectedly.
+            error_type = f"inference_exception:{exc.__class__.__name__}"
+            for result in stage_a_results:
+                if result.get("page_state") is not None or result.get("error_type"):
+                    continue
+                result["error_type"] = error_type
+                result["parse_ok"] = False
+                append_jsonl(
+                    raw_outputs_path,
+                    {
+                        "stage": "page_error",
+                        "file_name": result["row"].get("file_name"),
+                        "image": result["image_name"],
                         "error_type": error_type,
                         "error": str(exc),
                         "traceback": traceback.format_exc(),
@@ -635,6 +807,7 @@ def main() -> int:
             "row_count": len(prediction_rows),
             "error_count": error_count,
             "image_batch_size": image_batch_size,
+            "stage_a_batch_size": stage_a_batch_size,
             "stage_b_batch_size": int(generation_cfg.get("stage_b_batch_size", 1)),
             "finished_at": time.time(),
         },

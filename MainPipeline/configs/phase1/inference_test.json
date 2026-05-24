@@ -20,7 +20,8 @@
     "low_cpu_mem_usage": true
   },
   "logging": {
-    "transformers_verbosity": "error"
+    "transformers_verbosity": "error",
+    "diagnostic_progress": true
   },
   "generation": {
     "max_pixels_page": 850000,
@@ -28,6 +29,7 @@
     "max_new_tokens_stage_a": 2048,
     "max_new_tokens_stage_b": 1024,
     "image_batch_size": 2,
+    "stage_a_batch_size": 2,
     "stage_b_batch_size": 64,
     "crop_pad_ratio": 0.02
   },

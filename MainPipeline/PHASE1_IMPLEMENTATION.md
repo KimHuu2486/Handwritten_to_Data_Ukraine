@@ -140,8 +140,8 @@ Chỉ nên dùng 4-bit như fallback khi VM bị OOM.
 ## 5. Validate
 
 Nếu final adapter không nằm ở path mặc định, chỉnh `model.adapter_path` trong `inference_val.json`.
-Inference Phase 1 giữ Stage A full-page ở batch 1 để tránh OOM, nhưng Stage B crop OCR dùng `stage_b_batch_size=4` trong `inference_val.json` để tận dụng GPU tốt hơn.
-Nếu OOM khi OCR crop/table lớn, giảm `stage_b_batch_size` về `2` hoặc `1`.
+Inference Phase 1 có `generation.stage_a_batch_size` cho Stage A full-page và `generation.stage_b_batch_size` cho Stage B crop OCR. `generation.image_batch_size` là số page được gom trong lô bao ngoài, nên cần >= `stage_a_batch_size` nếu muốn Stage A batch thật.
+Nếu OOM ở Stage A, giảm `stage_a_batch_size` về `1`. Nếu OOM khi OCR crop/table lớn, giảm `stage_b_batch_size` về `32`, `16`, hoặc thấp hơn.
 
 ```text
 python -m MainPipeline.src.phase1.infer_phase1 --config MainPipeline/configs/phase1/inference_val.json
@@ -241,8 +241,18 @@ Luồng này đọc metadata test từ `dataset/test/metadata.jsonl`, map theo t
 artifacts/main_pipeline/phase1/submissions/submission_phase1_yolo_layout.csv
 ```
 
-Với config YOLO, `generation.image_batch_size` quyết định số ảnh được gom trong một lô page trước khi OCR crop chung; `generation.stage_b_batch_size` vẫn là số crop trong mỗi lần `generate`; `output.progress_every` mặc định in tiến độ sau mỗi 10 ảnh hoàn tất.
+Với config YOLO, `generation.image_batch_size` quyết định số ảnh được gom trong một lô page trước khi OCR crop chung; `generation.stage_b_batch_size` vẫn là số crop trong mỗi lần `generate`; `generation.stage_a_batch_size` không có tác dụng vì YOLO đã bỏ qua Stage A; `output.progress_every` mặc định in tiến độ sau mỗi 10 ảnh hoàn tất.
 Các config inference có `logging.transformers_verbosity="error"` để giảm noise warning Transformers trên terminal. Đổi về `warning` hoặc `info` nếu cần debug processor/model.
+
+Nếu một số ảnh bị `error_type` trong predictions CSV, xóa riêng các row lỗi rồi resume:
+
+```text
+python -m MainPipeline.src.phase1.clean_prediction_errors --config MainPipeline/configs/phase1/inference_test_yolo_layout.json --dry-run
+python -m MainPipeline.src.phase1.clean_prediction_errors --config MainPipeline/configs/phase1/inference_test_yolo_layout.json
+python -m MainPipeline.src.phase1.infer_phase1 --config MainPipeline/configs/phase1/inference_test_yolo_layout.json --resume
+```
+
+Utility này backup predictions/submission trước khi ghi lại, giữ các ảnh OK và chỉ để `--resume` chạy lại ảnh lỗi.
 
 ## 6. Guardrail Phase 1
 
