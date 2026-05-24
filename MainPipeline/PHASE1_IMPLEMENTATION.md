@@ -226,6 +226,21 @@ artifacts/main_pipeline/phase1/predictions/phase1_test_raw_outputs.jsonl
 
 File nộp competition là `submission_phase1.csv`, chỉ có 2 cột `image,regions`. Cột `text` nằm bên trong JSON của `regions`, không phải cột CSV riêng.
 
+### 5.3. Test inference với bbox/type có sẵn từ DocLayoutYOLO
+
+Nếu muốn bỏ qua Stage A Qwen layout detection và chỉ dùng bbox/type có sẵn từ `MainPipeline/Bbox - DocLayoutYOLOv4.csv`, chạy config riêng:
+
+```text
+python -m MainPipeline.src.phase1.infer_phase1 --config MainPipeline/configs/phase1/inference_test_yolo_layout.json --limit 2
+python -m MainPipeline.src.phase1.infer_phase1 --config MainPipeline/configs/phase1/inference_test_yolo_layout.json
+```
+
+Luồng này đọc metadata test từ `dataset/test/metadata.jsonl`, map theo tên file ảnh trong CSV YOLO, rồi chạy Stage B crop OCR và Stage E guardrail. Output submission riêng là:
+
+```text
+artifacts/main_pipeline/phase1/submissions/submission_phase1_yolo_layout.csv
+```
+
 ## 6. Guardrail Phase 1
 
 - Stage A target chỉ có `bbox,type`.

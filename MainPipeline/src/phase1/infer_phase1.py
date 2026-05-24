@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from MainPipeline.src.common.bbox import crop_region
+from MainPipeline.src.common.bbox import as_float_bbox, clamp_bbox, crop_region, is_valid_bbox
 from MainPipeline.src.common.io import append_jsonl, load_config, read_jsonl, resolve_path, write_json
 from MainPipeline.src.common.json_parse import extract_json_array, normalize_layout_regions
 from MainPipeline.src.common.prompts import stage_a_prompt, stage_b_prompt
@@ -145,6 +145,42 @@ def existing_images(csv_path: Path) -> set[str]:
         return {row["image"] for row in csv.DictReader(handle) if row.get("image")}
 
 
+def read_external_layout_csv(path: Path) -> dict[str, list[dict[str, Any]]]:
+    """Read precomputed bbox/type regions from a Kaggle-shaped CSV."""
+    layouts: dict[str, list[dict[str, Any]]] = {}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        for row_index, row in enumerate(csv.DictReader(handle), start=2):
+            image_name = str(row.get("image") or "").strip()
+            if not image_name:
+                raise ValueError(f"external layout CSV row {row_index} is missing image")
+            try:
+                regions = json.loads(row.get("regions") or "[]")
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"external layout CSV row {row_index} has invalid regions JSON") from exc
+            if isinstance(regions, dict):
+                regions = regions.get("regions", [])
+            if not isinstance(regions, list):
+                raise ValueError(f"external layout CSV row {row_index} regions must be a list")
+            layouts[Path(image_name).name] = regions
+    return layouts
+
+
+def normalize_external_layout_regions(raw_regions: list[Any], image_width: int, image_height: int) -> list[dict[str, Any]]:
+    """Normalize external detector output that is already in pixel coordinates."""
+    regions: list[dict[str, Any]] = []
+    for item in raw_regions:
+        if not isinstance(item, dict):
+            continue
+        bbox = as_float_bbox(item.get("bbox"))
+        if bbox is None:
+            continue
+        pixel_bbox = clamp_bbox(bbox, image_width, image_height)
+        if not is_valid_bbox(pixel_bbox):
+            continue
+        regions.append({"bbox": pixel_bbox, "type": normalize_type(item.get("type")), "text": item.get("text", "")})
+    return enforce_submission_policy(regions)
+
+
 def read_inference_rows(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], Path]:
     """Load validation JSONL metadata or test rows from sample_submission.csv."""
     input_cfg = cfg["input"]
@@ -206,31 +242,51 @@ def ensure_image_size(row: dict[str, Any], image_path: Path) -> dict[str, Any]:
         return enriched
 
 
-def run_page(cfg: dict[str, Any], runtime: tuple[Any, ...], row: dict[str, Any], image_path: Path, crops_dir: Path, raw_outputs_path: Path) -> tuple[list[dict[str, Any]], bool, str | None]:
-    """Run Phase 1 inference for one page: Stage A layout, Stage B crop OCR, Stage E guardrail."""
+def run_page(
+    cfg: dict[str, Any],
+    runtime: tuple[Any, ...],
+    row: dict[str, Any],
+    image_path: Path,
+    crops_dir: Path,
+    raw_outputs_path: Path,
+    external_layout_regions: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], bool, str | None]:
+    """Run Phase 1 inference for one page: Stage A/external layout, Stage B crop OCR, Stage E guardrail."""
     torch, process_vision_info, model, processor, device = runtime
     generation_cfg = cfg["generation"]
     source = str(row.get("source", "unknown"))
     image_width = int(row.get("image_width", 1))
     image_height = int(row.get("image_height", 1))
 
-    stage_a_raw = generate_text(
-        torch,
-        process_vision_info,
-        model,
-        processor,
-        device,
-        image_path,
-        stage_a_prompt(source),
-        int(generation_cfg.get("max_pixels_page", 850000)),
-        int(generation_cfg.get("max_new_tokens_stage_a", 2048)),
-    )
-    append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
-    raw_layout, parse_error = extract_json_array(stage_a_raw)
-    if parse_error:
-        return [], False, parse_error
-
-    regions = normalize_layout_regions(raw_layout, image_width, image_height)
+    if external_layout_regions is None:
+        stage_a_raw = generate_text(
+            torch,
+            process_vision_info,
+            model,
+            processor,
+            device,
+            image_path,
+            stage_a_prompt(source),
+            int(generation_cfg.get("max_pixels_page", 850000)),
+            int(generation_cfg.get("max_new_tokens_stage_a", 2048)),
+        )
+        append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
+        raw_layout, parse_error = extract_json_array(stage_a_raw)
+        if parse_error:
+            return [], False, parse_error
+        regions = normalize_layout_regions(raw_layout, image_width, image_height)
+    else:
+        regions = normalize_external_layout_regions(external_layout_regions, image_width, image_height)
+        append_jsonl(
+            raw_outputs_path,
+            {
+                "stage": "external_layout",
+                "file_name": row.get("file_name"),
+                "source": "external_layout_csv",
+                "raw_region_count": len(external_layout_regions),
+                "normalized_region_count": len(regions),
+            },
+        )
     final_regions: list[dict[str, Any] | None] = [None] * len(regions)
     pending_stage_b: list[dict[str, Any]] = []
     for region_index, region in enumerate(regions):
@@ -282,7 +338,7 @@ def run_page(cfg: dict[str, Any], runtime: tuple[Any, ...], row: dict[str, Any],
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Phase 1 inference: Stage A layout-only + Stage B crop OCR + Stage E assembly.")
+    parser = argparse.ArgumentParser(description="Run Phase 1 inference: Stage A/external layout + Stage B crop OCR + Stage E assembly.")
     parser.add_argument("--config", required=True, help="Path to JSON/YAML config.")
     parser.add_argument("--limit", type=int, default=None, help="Optional smoke-test row limit.")
     parser.add_argument("--resume", action="store_true", help="Skip images already present in output CSV.")
@@ -294,6 +350,11 @@ def main() -> int:
     raw_outputs_path = resolve_path(cfg["output"]["raw_outputs_jsonl"])
     crops_dir = resolve_path(cfg["output"].get("crops_dir", "artifacts/main_pipeline/phase1/predictions/crops_tmp"))
     submission_csv = resolve_path(cfg["output"]["submission_csv"]) if cfg["output"].get("submission_csv") else None
+    external_layouts = None
+    if cfg["input"].get("external_layout_csv"):
+        external_layout_csv = resolve_path(cfg["input"]["external_layout_csv"])
+        external_layouts = read_external_layout_csv(external_layout_csv)
+        print(f"loaded external layout CSV: {external_layout_csv} rows={len(external_layouts)}", flush=True)
     runtime = build_model(cfg)
     if not args.resume and raw_outputs_path.exists():
         raw_outputs_path.unlink()
@@ -311,6 +372,7 @@ def main() -> int:
     checkpoint_every = int(cfg["output"].get("checkpoint_every", 5))
     for row_index, row in enumerate(rows, start=1):
         image_name = str(row.get("submission_image") or Path(str(row.get("file_name", ""))).name)
+        layout_key = Path(image_name).name
         if image_name in done:
             print(f"[{row_index}/{len(rows)}] skip cached image={image_name}", flush=True)
             continue
@@ -318,12 +380,22 @@ def main() -> int:
         image_path = resolve_image_path(row, input_path, image_roots)
         if image_path is None:
             regions, parse_ok, error_type = [], False, "image_not_found"
+        elif external_layouts is not None and layout_key not in external_layouts:
+            regions, parse_ok, error_type = [], False, "external_layout_missing"
         else:
             stage_b_batch_size = int(cfg.get("generation", {}).get("stage_b_batch_size", 1))
             print(f"[{row_index}/{len(rows)}] infer image={image_name} stage_b_batch={stage_b_batch_size}", flush=True)
             try:
                 enriched_row = ensure_image_size(row, image_path)
-                regions, parse_ok, error_type = run_page(cfg, runtime, enriched_row, image_path, crops_dir, raw_outputs_path)
+                regions, parse_ok, error_type = run_page(
+                    cfg,
+                    runtime,
+                    enriched_row,
+                    image_path,
+                    crops_dir,
+                    raw_outputs_path,
+                    external_layouts[layout_key] if external_layouts is not None else None,
+                )
             except Exception as exc:  # Keep long validation runs moving and preserve debug context.
                 regions, parse_ok = [], False
                 error_type = f"inference_exception:{exc.__class__.__name__}"
