@@ -1,7 +1,7 @@
 {
   "seed": 42,
-  "val_ratio": 0.02,
-  "total_samples": null,
+  "val_ratio": 0.05,
+  "total_samples": 30000,
   "exclude_manifest_path": null,
   "inputs": [
     {
@@ -19,4 +19,3 @@
   "output_val_jsonl": "artifacts/main_pipeline/phase1/datasets/silver_val.jsonl",
   "stats_json": "artifacts/main_pipeline/phase1/datasets/silver_mix.stats.json"
 }
-

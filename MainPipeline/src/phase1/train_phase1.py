@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from MainPipeline.src.common.io import load_config, resolve_path, write_json
@@ -147,6 +148,55 @@ def import_training_modules():
         SFTConfig,
         SFTTrainer,
     )
+
+
+def _jsonl_excerpt(line: str, pos: int | None = None, max_chars: int = 240) -> str:
+    """Return a compact single-line excerpt, centered near a JSON error when possible."""
+    text = line.rstrip("\r\n")
+    if len(text) <= max_chars:
+        return text
+    if pos is None:
+        return text[: max_chars - 3] + "..."
+    context = max_chars // 2
+    start = max(pos - context, 0)
+    end = min(start + max_chars, len(text))
+    start = max(end - max_chars, 0)
+    prefix = "..." if start else ""
+    suffix = "..." if end < len(text) else ""
+    return prefix + text[start:end] + suffix
+
+
+def validate_jsonl_for_hf_loader(path: Path, split_name: str) -> int:
+    """Validate JSONL with the same one-object-per-line contract used by HF datasets."""
+    if not path.exists():
+        raise FileNotFoundError(f"JSONL file for split '{split_name}' does not exist: {path}")
+    row_count = 0
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                if not line.strip():
+                    raise ValueError(
+                        f"Invalid JSONL for split '{split_name}': {path}:{line_no} is blank. "
+                        "Hugging Face's json loader expects one JSON object per line."
+                    )
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    excerpt = _jsonl_excerpt(line, exc.pos)
+                    raise ValueError(
+                        f"Invalid JSONL for split '{split_name}': {path}:{line_no}:{exc.colno}: {exc.msg}\n"
+                        f"line excerpt: {excerpt}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise ValueError(
+                        f"Invalid JSONL for split '{split_name}': {path}:{line_no} is "
+                        f"{type(row).__name__}, expected a JSON object."
+                    )
+                row_count += 1
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Invalid UTF-8 in JSONL for split '{split_name}': {path}: {exc}") from exc
+    print(f"[data] jsonl ok | split={split_name} | rows={row_count} | path={path}", flush=True)
+    return row_count
 
 
 def dtype_from_name(name: str):
@@ -383,6 +433,11 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(resolve_path(args.config))
+    train_jsonl = resolve_path(cfg["data"]["train_jsonl"])
+    validation_jsonl = resolve_path(cfg["data"]["validation_jsonl"])
+    validate_jsonl_for_hf_loader(train_jsonl, "train")
+    validate_jsonl_for_hf_loader(validation_jsonl, "validation")
+
     modules = import_training_modules()
     (
         load_dataset,
@@ -401,8 +456,8 @@ def main() -> int:
     dataset = load_dataset(
         "json",
         data_files={
-            "train": str(resolve_path(cfg["data"]["train_jsonl"])),
-            "validation": str(resolve_path(cfg["data"]["validation_jsonl"])),
+            "train": str(train_jsonl),
+            "validation": str(validation_jsonl),
         },
     )
     model, processor = build_model_and_processor(cfg, modules)
