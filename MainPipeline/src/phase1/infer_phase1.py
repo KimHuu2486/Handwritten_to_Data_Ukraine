@@ -26,6 +26,26 @@ def import_runtime_modules():
     return torch, PeftModel, process_vision_info, AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 
+def configure_transformers_logging(cfg: dict[str, Any]) -> None:
+    """Apply optional Transformers verbosity from config before model loading."""
+    verbosity = str(cfg.get("logging", {}).get("transformers_verbosity", "")).strip().lower()
+    if not verbosity:
+        return
+    from transformers.utils import logging as transformers_logging
+
+    setters = {
+        "debug": transformers_logging.set_verbosity_debug,
+        "info": transformers_logging.set_verbosity_info,
+        "warning": transformers_logging.set_verbosity_warning,
+        "error": transformers_logging.set_verbosity_error,
+        "critical": transformers_logging.set_verbosity_error,
+    }
+    setter = setters.get(verbosity)
+    if setter is None:
+        raise ValueError(f"Unsupported logging.transformers_verbosity: {verbosity}")
+    setter()
+
+
 def dtype_from_name(torch, name: str):
     """Map config dtype strings to torch dtype objects."""
     lowered = str(name).lower()
@@ -72,7 +92,53 @@ def build_model(cfg: dict[str, Any]):
     model = PeftModel.from_pretrained(base_model, adapter_path)
     model.eval()
     processor = AutoProcessor.from_pretrained(adapter_path if (Path(adapter_path) / "processor_config.json").exists() else base_model_path)
+    configure_generation_padding(model, processor)
     return torch, process_vision_info, model, processor, device
+
+
+def configure_generation_padding(model: Any, processor: Any) -> None:
+    """Use left padding for decoder-only batched generation."""
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is None:
+        return
+    tokenizer.padding_side = "left"
+    if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token", None) is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_token_id is None:
+        return
+    for config in (getattr(model, "config", None), getattr(model, "generation_config", None)):
+        if config is not None and getattr(config, "pad_token_id", None) is None:
+            config.pad_token_id = pad_token_id
+
+
+def apply_generation_chat_template(processor: Any, messages: list[dict[str, Any]]) -> str:
+    """Format chat prompts while keeping Qwen thinking disabled across Transformers versions."""
+    base_kwargs = {"tokenize": False, "add_generation_prompt": True}
+    for extra_kwargs in (
+        {"enable_thinking": False},
+        {},
+    ):
+        try:
+            return processor.apply_chat_template(messages, **base_kwargs, **extra_kwargs)
+        except TypeError:
+            continue
+    return processor.apply_chat_template(messages, **base_kwargs)
+
+
+def build_processor_inputs(processor: Any, text_prompts: list[str], image_inputs: Any, video_inputs: Any):
+    """Tokenize multimodal prompts with left padding and a compatibility fallback."""
+    try:
+        return processor(
+            text=text_prompts,
+            images=image_inputs,
+            videos=video_inputs,
+            text_kwargs={"padding": True, "padding_side": "left", "return_tensors": "pt"},
+            images_kwargs={"return_tensors": "pt"},
+            videos_kwargs={"return_tensors": "pt"},
+        )
+    except TypeError:
+        return processor(text=text_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
 
 
 def generate_text(torch, process_vision_info, model, processor, device: str, image_path: Path, prompt: str, max_pixels: int, max_new_tokens: int) -> str:
@@ -104,13 +170,9 @@ def generate_text_batch(
     chat_messages = [[message] for message in messages_list]
     text_prompts: list[str] = []
     for messages in chat_messages:
-        try:
-            text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-        except TypeError:
-            text_prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        text_prompts.append(text_prompt)
+        text_prompts.append(apply_generation_chat_template(processor, messages))
     image_inputs, video_inputs = process_vision_info(chat_messages)
-    inputs = processor(text=text_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt")
+    inputs = build_processor_inputs(processor, text_prompts, image_inputs, video_inputs)
     if device != "auto":
         inputs = inputs.to(device)
     with torch.inference_mode():
@@ -242,7 +304,7 @@ def ensure_image_size(row: dict[str, Any], image_path: Path) -> dict[str, Any]:
         return enriched
 
 
-def run_page(
+def prepare_page_ocr_jobs(
     cfg: dict[str, Any],
     runtime: tuple[Any, ...],
     row: dict[str, Any],
@@ -250,8 +312,8 @@ def run_page(
     crops_dir: Path,
     raw_outputs_path: Path,
     external_layout_regions: list[dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], bool, str | None]:
-    """Run Phase 1 inference for one page: Stage A/external layout, Stage B crop OCR, Stage E guardrail."""
+) -> tuple[dict[str, Any] | None, bool, str | None]:
+    """Build one page layout/crop state and defer Stage B OCR to a shared batch."""
     torch, process_vision_info, model, processor, device = runtime
     generation_cfg = cfg["generation"]
     source = str(row.get("source", "unknown"))
@@ -273,7 +335,7 @@ def run_page(
         append_jsonl(raw_outputs_path, {"stage": "A", "file_name": row.get("file_name"), "raw_text": stage_a_raw})
         raw_layout, parse_error = extract_json_array(stage_a_raw)
         if parse_error:
-            return [], False, parse_error
+            return None, False, parse_error
         regions = normalize_layout_regions(raw_layout, image_width, image_height)
     else:
         regions = normalize_external_layout_regions(external_layout_regions, image_width, image_height)
@@ -287,6 +349,11 @@ def run_page(
                 "normalized_region_count": len(regions),
             },
         )
+    page_state: dict[str, Any] = {
+        "row": row,
+        "final_regions": [None] * len(regions),
+        "pending_stage_b": [],
+    }
     final_regions: list[dict[str, Any] | None] = [None] * len(regions)
     pending_stage_b: list[dict[str, Any]] = []
     for region_index, region in enumerate(regions):
@@ -301,11 +368,23 @@ def run_page(
             {
                 "region_index": region_index,
                 "region": region,
+                "page_state": page_state,
                 "type": region_type,
                 "crop_path": crop_path,
                 "prompt": stage_b_prompt(source, region_type),
             }
         )
+    page_state["final_regions"] = final_regions
+    page_state["pending_stage_b"] = pending_stage_b
+    return page_state, True, None
+
+
+def run_stage_b_jobs(cfg: dict[str, Any], runtime: tuple[Any, ...], pending_stage_b: list[dict[str, Any]], raw_outputs_path: Path) -> None:
+    """Run OCR for all pending crop jobs, potentially spanning multiple pages."""
+    if not pending_stage_b:
+        return
+    torch, process_vision_info, model, processor, device = runtime
+    generation_cfg = cfg["generation"]
 
     stage_b_batch_size = int(generation_cfg.get("stage_b_batch_size", 1))
     for batch in chunks(pending_stage_b, stage_b_batch_size):
@@ -321,6 +400,8 @@ def run_page(
         )
         for item, stage_b_raw in zip(batch, batch_outputs):
             region = item["region"]
+            page_state = item["page_state"]
+            row = page_state["row"]
             append_jsonl(
                 raw_outputs_path,
                 {
@@ -333,7 +414,59 @@ def run_page(
                     "raw_text": stage_b_raw,
                 },
             )
-            final_regions[item["region_index"]] = {"bbox": region["bbox"], "type": item["type"], "text": clean_ocr_text(stage_b_raw)}
+            page_state["final_regions"][item["region_index"]] = {"bbox": region["bbox"], "type": item["type"], "text": clean_ocr_text(stage_b_raw)}
+
+
+def finalize_page_state(page_state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Assemble one page after Stage B OCR has filled final regions."""
+    return enforce_submission_policy([region for region in page_state["final_regions"] if region is not None])
+
+
+def run_page(
+    cfg: dict[str, Any],
+    runtime: tuple[Any, ...],
+    row: dict[str, Any],
+    image_path: Path,
+    crops_dir: Path,
+    raw_outputs_path: Path,
+    external_layout_regions: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], bool, str | None]:
+    """Run Phase 1 inference for one page: Stage A/external layout, Stage B crop OCR, Stage E guardrail."""
+    page_state, parse_ok, error_type = prepare_page_ocr_jobs(cfg, runtime, row, image_path, crops_dir, raw_outputs_path, external_layout_regions)
+    if not parse_ok or page_state is None:
+        return [], parse_ok, error_type
+    run_stage_b_jobs(cfg, runtime, page_state["pending_stage_b"], raw_outputs_path)
+    return finalize_page_state(page_state), True, None
+
+
+def build_prediction_row(row: dict[str, Any], image_name: str, regions: list[dict[str, Any]], parse_ok: bool, error_type: str | None, runtime_sec: float) -> dict[str, Any]:
+    """Create one debug/submission row."""
+    return {
+        "image": image_name,
+        "image_id": row.get("image_id", row.get("file_name")),
+        "file_name": row.get("file_name"),
+        "regions": json.dumps(regions, ensure_ascii=False),
+        "parse_ok": parse_ok,
+        "error_type": error_type or "",
+        "runtime_sec": f"{runtime_sec:.6f}",
+    }
+
+
+def maybe_write_checkpoint(output_csv: Path, submission_csv: Path | None, prediction_rows: list[dict[str, Any]], checkpoint_every: int) -> None:
+    """Persist predictions at the configured checkpoint cadence."""
+    if checkpoint_every <= 0:
+        return
+    if len(prediction_rows) % checkpoint_every == 0:
+        write_prediction_csv(output_csv, prediction_rows)
+        if submission_csv:
+            write_submission_csv(submission_csv, prediction_rows)
+
+
+def log_progress(done_count: int, total_count: int, error_count: int, started_at: float) -> None:
+    """Print compact progress instead of per-image logs."""
+    elapsed = time.perf_counter() - started_at
+    avg = elapsed / max(done_count, 1)
+    print(f"[progress] done={done_count}/{total_count} errors={error_count} elapsed_sec={elapsed:.1f} avg_sec_per_image={avg:.2f}", flush=True)
     return enforce_submission_policy([region for region in final_regions if region is not None]), True, None
 
 
@@ -345,6 +478,7 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(resolve_path(args.config))
+    configure_transformers_logging(cfg)
     image_roots = [str(root) for root in cfg["input"].get("image_roots", [])]
     output_csv = resolve_path(cfg["output"]["predictions_csv"])
     raw_outputs_path = resolve_path(cfg["output"]["raw_outputs_jsonl"])
@@ -369,25 +503,47 @@ def main() -> int:
         with output_csv.open("r", encoding="utf-8", newline="") as handle:
             prediction_rows = list(csv.DictReader(handle))
 
+    generation_cfg = cfg.get("generation", {})
     checkpoint_every = int(cfg["output"].get("checkpoint_every", 5))
-    for row_index, row in enumerate(rows, start=1):
-        image_name = str(row.get("submission_image") or Path(str(row.get("file_name", ""))).name)
-        layout_key = Path(image_name).name
-        if image_name in done:
-            print(f"[{row_index}/{len(rows)}] skip cached image={image_name}", flush=True)
-            continue
-        started = time.perf_counter()
-        image_path = resolve_image_path(row, input_path, image_roots)
-        if image_path is None:
-            regions, parse_ok, error_type = [], False, "image_not_found"
-        elif external_layouts is not None and layout_key not in external_layouts:
-            regions, parse_ok, error_type = [], False, "external_layout_missing"
-        else:
-            stage_b_batch_size = int(cfg.get("generation", {}).get("stage_b_batch_size", 1))
-            print(f"[{row_index}/{len(rows)}] infer image={image_name} stage_b_batch={stage_b_batch_size}", flush=True)
+    image_batch_size = max(int(generation_cfg.get("image_batch_size", 1)), 1)
+    progress_every = max(int(cfg["output"].get("progress_every", generation_cfg.get("progress_every", 10))), 1)
+    run_started = time.perf_counter()
+    error_count = sum(1 for row in prediction_rows if row.get("error_type"))
+    last_progress_count = len(prediction_rows)
+
+    row_items = [{"row_index": row_index, "row": row} for row_index, row in enumerate(rows, start=1)]
+    for row_batch in chunks(row_items, image_batch_size):
+        batch_results: list[dict[str, Any]] = []
+        page_states: list[dict[str, Any]] = []
+
+        for item in row_batch:
+            row = item["row"]
+            image_name = str(row.get("submission_image") or Path(str(row.get("file_name", ""))).name)
+            layout_key = Path(image_name).name
+            if image_name in done:
+                continue
+
+            result: dict[str, Any] = {
+                "row": row,
+                "image_name": image_name,
+                "started": time.perf_counter(),
+                "regions": [],
+                "parse_ok": False,
+                "error_type": None,
+            }
+            batch_results.append(result)
+
+            image_path = resolve_image_path(row, input_path, image_roots)
+            if image_path is None:
+                result["error_type"] = "image_not_found"
+                continue
+            if external_layouts is not None and layout_key not in external_layouts:
+                result["error_type"] = "external_layout_missing"
+                continue
+
             try:
                 enriched_row = ensure_image_size(row, image_path)
-                regions, parse_ok, error_type = run_page(
+                page_state, parse_ok, error_type = prepare_page_ocr_jobs(
                     cfg,
                     runtime,
                     enriched_row,
@@ -396,9 +552,15 @@ def main() -> int:
                     raw_outputs_path,
                     external_layouts[layout_key] if external_layouts is not None else None,
                 )
-            except Exception as exc:  # Keep long validation runs moving and preserve debug context.
-                regions, parse_ok = [], False
+                result["row"] = enriched_row
+                result["parse_ok"] = parse_ok
+                result["error_type"] = error_type
+                if page_state is not None:
+                    result["page_state"] = page_state
+                    page_states.append(page_state)
+            except Exception as exc:  # Keep long runs moving and preserve debug context.
                 error_type = f"inference_exception:{exc.__class__.__name__}"
+                result["error_type"] = error_type
                 append_jsonl(
                     raw_outputs_path,
                     {
@@ -410,27 +572,74 @@ def main() -> int:
                         "traceback": traceback.format_exc(),
                     },
                 )
-                print(f"[{row_index}/{len(rows)}] error image={image_name} type={error_type}: {exc}", flush=True)
-        runtime_sec = time.perf_counter() - started
-        prediction_rows.append(
-            {
-                "image": image_name,
-                "image_id": row.get("image_id", row.get("file_name")),
-                "file_name": row.get("file_name"),
-                "regions": json.dumps(regions, ensure_ascii=False),
-                "parse_ok": parse_ok,
-                "error_type": error_type or "",
-                "runtime_sec": f"{runtime_sec:.6f}",
-            }
-        )
-        if len(prediction_rows) % checkpoint_every == 0:
-            write_prediction_csv(output_csv, prediction_rows)
-            if submission_csv:
-                write_submission_csv(submission_csv, prediction_rows)
+
+        pending_stage_b = [job for page_state in page_states for job in page_state["pending_stage_b"]]
+        try:
+            run_stage_b_jobs(cfg, runtime, pending_stage_b, raw_outputs_path)
+        except Exception as exc:  # A failed OCR batch affects the pages whose crop jobs were grouped together.
+            error_type = f"inference_exception:{exc.__class__.__name__}"
+            for result in batch_results:
+                page_state = result.get("page_state")
+                if page_state is None or not page_state["pending_stage_b"]:
+                    continue
+                result["error_type"] = error_type
+                result["parse_ok"] = False
+                result["regions"] = []
+                append_jsonl(
+                    raw_outputs_path,
+                    {
+                        "stage": "page_error",
+                        "file_name": result["row"].get("file_name"),
+                        "image": result["image_name"],
+                        "error_type": error_type,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+
+        for result in batch_results:
+            page_state = result.get("page_state")
+            if page_state is not None and not result.get("error_type"):
+                result["regions"] = finalize_page_state(page_state)
+                result["parse_ok"] = True
+            elif page_state is not None and not page_state["pending_stage_b"]:
+                result["regions"] = finalize_page_state(page_state)
+
+            runtime_sec = time.perf_counter() - result["started"]
+            prediction_rows.append(
+                build_prediction_row(
+                    result["row"],
+                    result["image_name"],
+                    result["regions"],
+                    bool(result["parse_ok"]),
+                    result["error_type"],
+                    runtime_sec,
+                )
+            )
+            done.add(result["image_name"])
+            if result["error_type"]:
+                error_count += 1
+            maybe_write_checkpoint(output_csv, submission_csv, prediction_rows, checkpoint_every)
+
+            if len(prediction_rows) - last_progress_count >= progress_every:
+                log_progress(len(prediction_rows), len(rows), error_count, run_started)
+                last_progress_count = len(prediction_rows)
+
+    if len(prediction_rows) != last_progress_count:
+        log_progress(len(prediction_rows), len(rows), error_count, run_started)
     write_prediction_csv(output_csv, prediction_rows)
     if submission_csv:
         write_submission_csv(submission_csv, prediction_rows)
-    write_json(resolve_path(cfg["output"]["runtime_summary_json"]), {"row_count": len(prediction_rows), "finished_at": time.time()})
+    write_json(
+        resolve_path(cfg["output"]["runtime_summary_json"]),
+        {
+            "row_count": len(prediction_rows),
+            "error_count": error_count,
+            "image_batch_size": image_batch_size,
+            "stage_b_batch_size": int(generation_cfg.get("stage_b_batch_size", 1)),
+            "finished_at": time.time(),
+        },
+    )
     print(f"wrote predictions: {output_csv}", flush=True)
     if submission_csv:
         print(f"wrote submission: {submission_csv}", flush=True)

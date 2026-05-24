@@ -241,6 +241,9 @@ Luồng này đọc metadata test từ `dataset/test/metadata.jsonl`, map theo t
 artifacts/main_pipeline/phase1/submissions/submission_phase1_yolo_layout.csv
 ```
 
+Với config YOLO, `generation.image_batch_size` quyết định số ảnh được gom trong một lô page trước khi OCR crop chung; `generation.stage_b_batch_size` vẫn là số crop trong mỗi lần `generate`; `output.progress_every` mặc định in tiến độ sau mỗi 10 ảnh hoàn tất.
+Các config inference có `logging.transformers_verbosity="error"` để giảm noise warning Transformers trên terminal. Đổi về `warning` hoặc `info` nếu cần debug processor/model.
+
 ## 6. Guardrail Phase 1
 
 - Stage A target chỉ có `bbox,type`.
