@@ -1,7 +1,7 @@
 {
   "input": {
     "metadata_path": "dataset/test/metadata.jsonl",
-    "external_layout_csv": "MainPipeline/Bbox - DocLayoutYOLOv4.csv",
+    "external_layout_csv": "/home/ubuntu/Handwritten_to_Data_Ukraine/MainPipeline/Bbox_DocLayoutYOLOv4.csv",
     "image_roots": [
       "/mnt/data/rukopys/test",
       "/mnt/data/rukopys/test/images",
@@ -29,8 +29,8 @@
     "max_pixels_crop": 262144,
     "max_new_tokens_stage_a": 2048,
     "max_new_tokens_stage_b": 1024,
-    "image_batch_size": 4,
-    "stage_b_batch_size": 4,
+    "image_batch_size": 5,
+    "stage_b_batch_size": 64,
     "crop_pad_ratio": 0.02
   },
   "output": {
@@ -40,6 +40,6 @@
     "runtime_summary_json": "artifacts/main_pipeline/phase1/predictions/phase1_test_yolo_layout_runtime_summary.json",
     "crops_dir": "artifacts/main_pipeline/phase1/predictions/test_yolo_layout_crops_tmp",
     "progress_every": 10,
-    "checkpoint_every": 5
+    "checkpoint_every": 20
   }
 }

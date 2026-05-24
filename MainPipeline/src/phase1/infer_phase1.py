@@ -467,7 +467,6 @@ def log_progress(done_count: int, total_count: int, error_count: int, started_at
     elapsed = time.perf_counter() - started_at
     avg = elapsed / max(done_count, 1)
     print(f"[progress] done={done_count}/{total_count} errors={error_count} elapsed_sec={elapsed:.1f} avg_sec_per_image={avg:.2f}", flush=True)
-    return enforce_submission_policy([region for region in final_regions if region is not None]), True, None
 
 
 def main() -> int:

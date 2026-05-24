@@ -27,8 +27,8 @@
     "max_pixels_crop": 262144,
     "max_new_tokens_stage_a": 2048,
     "max_new_tokens_stage_b": 1024,
-    "image_batch_size": 1,
-    "stage_b_batch_size": 4,
+    "image_batch_size": 2,
+    "stage_b_batch_size": 64,
     "crop_pad_ratio": 0.02
   },
   "output": {
@@ -38,6 +38,6 @@
     "runtime_summary_json": "artifacts/main_pipeline/phase1/predictions/phase1_test_runtime_summary.json",
     "crops_dir": "artifacts/main_pipeline/phase1/predictions/test_crops_tmp",
     "progress_every": 10,
-    "checkpoint_every": 5
+    "checkpoint_every": 20
   }
 }
