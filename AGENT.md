@@ -6,6 +6,8 @@
 - **Trang thai hien tai:** Dang o Phase B2, dong thoi da chot va tai cau truc `NewPipeline/pipeline.md` cho pipeline competition-first retrain tu baseline. Frozen validation manifest v1 da pass gate; B2 baseline anchor `b2_stage2_gold__crop-none__prompt-v1__val-v1` da co cache/score va da lock vao `artifacts/ablations/ablation_results.csv`.
 - **Huong pipeline moi:** Stage A gom source-aware layout + deterministic `page_context_light` -> Stage B type-aware OCR voi `ocr_context_light` -> Stage C weighted risk gate -> Stage D multi-view/refine voi `risk_rerank_context_light` -> Stage E metric-aware assembly.
 - **MainPipeline Phase 1:** Da chot contract Phase 1 chi bat Stage A layout-only, Stage B crop OCR va Stage E assembly/schema guardrail; Stage C/D chua bat trong Phase 1.
+- **Kaggle hybrid notebook hien tai:** `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb` la baseline YOLO + Qwen3-VL LoRA: YOLO detect bbox/type, Qwen OCR crop theo type/source hint, merge submission CSV.
+- **Kaggle pipeline-lite notebook:** Da tao ban thu nghiem rieng `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` de ablation Stage C/D/E lite ma khong ghi de notebook goc.
 - **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; batch 24 da chay trong `tmux` nhung CUDA driver `free` giam dan sau moi batch, nen batch 24 chi xem la aggressive/benchmark, khong mac dinh production-safe.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
@@ -63,6 +65,13 @@
 - [x] Viet `MainPipeline/PHASE1_IMPLEMENTATION.md` bang tieng Viet kem runbook build data, train, inference, validate, analyze va guardrail.
 - [x] Them `artifacts/main_pipeline/` vao `.gitignore`; coi dataset build, crops, predictions, checkpoints va score la generated artifacts khong commit.
 - [x] Smoke test Phase 1 local voi gold sample: build A1/B1, mix gold train/val, check CLI `--help` va py_compile pass.
+- [x] Doc va tom tat luong du lieu cua notebook Kaggle hybrid YOLO + Qwen3-VL: metadata -> YOLO regions -> crop OCR -> partial CSV theo GPU -> merge `submission.csv`.
+- [x] Refactor path config trong notebook Kaggle hybrid: gom `BASE_MODEL_PATH`, `LORA_ADAPTER_DIR`, `DATASET_ROOT`, `YOLO_WEIGHTS_PATH`; giu `DOCLAYOUT_REPO_CANDIDATES` de import fallback.
+- [x] Cap nhat Stage B prompt trong notebook Kaggle hybrid: prompt crop OCR ghep `source hint` tu metadata test + instruction theo `type` + marker rules + guardrail.
+- [x] Tao notebook moi `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` tu baseline de thu Stage C risk gate, Stage D reread high-risk va Stage E metric-aware postprocess.
+- [x] Them rule risk cho pipeline-lite: OCR rong, `formula/table` qua ngan, `formula/table` qua dai, text lap nhieu, output JSON/Markdown/explanation, bbox nho hoac aspect ratio bat thuong.
+- [x] Them Stage D Lite cho pipeline-lite: reread high-risk bang zoom crop + expanded crop, chi thay text khi reread co chat luong tot hon text cu.
+- [x] Them Stage E Lite cho pipeline-lite: enforce `image/graph` text rong, dedupe overlap nhe, sort reading order theo line grouping va fail neu thieu output thay vi im lang fill `[]`.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/khong nhat quan bbox format** -> **Fix:** Chuan hoa ve `[x1, y1, x2, y2]`, ho tro normalized, pixel va 0-1000 grid.
@@ -91,6 +100,10 @@
 - **MainPipeline issue 24: Stage B OCR co the bi cat token voi bang lon** -> **Fix:** Tang `max_new_tokens_stage_b` tu 512 len 1024 trong `inference_val.json`.
 - **MainPipeline issue 25: Can log train ro hon va luu checkpoint tot nhat** -> **Fix:** Bat `load_best_model_at_end` theo `eval_loss`, can bang `eval_steps/save_steps`, in checkpoint saved path va best metric khi ket thuc.
 - **MainPipeline issue 26: Artifact sinh ra trong repo de gay nham lan voi source** -> **Fix:** Chuan hoa output vao `artifacts/main_pipeline/phase1` va ignore `artifacts/main_pipeline/` trong git.
+- **Kaggle hybrid issue 27: `ModuleNotFoundError: doclayout_yolo` khi Papermill chay cell import** -> **Fix:** Khoi phuc `sys.path` fallback qua `DOCLAYOUT_REPO_CANDIDATES` truoc `from doclayout_yolo import YOLOv10`.
+- **Kaggle hybrid issue 28: Source prompt crop OCR chua lay tu metadata test** -> **Fix:** Truyen `rec.get("source")` tu `metadata.jsonl` vao `infer_one_image -> ocr_regions -> crop_messages -> build_crop_prompt`.
+- **Pipeline-lite issue 29: `[illegible]` co the bi xoa neu xem nhu JSON list loi** -> **Fix:** Trong notebook pipeline-lite, `clean_crop_text` giu `[illegible]` va chi parse JSON khi co wrapper hop le.
+- **Pipeline-lite issue 30: Partial CSV co nguy co tron voi baseline** -> **Fix:** Doi prefix checkpoint rieng thanh `hybrid_pipeline_lite_partial_results_gpu`.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
 - [ ] Sau khi B2 VM run ket thuc, verify `validation_predictions.csv`, `validation_raw_outputs.jsonl`, row count 159, score summary, runtime summary va checksum truoc khi dung cho Phase C.
@@ -111,10 +124,17 @@
 - [ ] Chay Phase 1 validation inference tren frozen val, tinh score va xem breakdown source/type truoc khi quyet dinh Phase 2.
 - [ ] Neu OCR crop dai van bi truncation, can nhac tang `max_new_tokens_stage_b` tiep hoac tach table/region lon bang refine policy o Phase 2.
 - [ ] Neu can production hardening, them guardrail phat hien bbox raw pixel >1000 do model khong tuan grid va fallback normalize rieng.
+- [ ] Chay Kaggle smoke voi `TEST_MODE=True` cho `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` de xac nhan import, memory va partial merge.
+- [ ] So sanh baseline notebook voi pipeline-lite tren validation/subset: score, runtime, so region refined, ty le text bi thay va breakdown theo `source/type`.
+- [ ] Tune `REFINE_RISK_THRESHOLD`, `MAX_REFINE_REGIONS_PER_PAGE`, `FORMULA_MAX_CHARS`, `TABLE_MAX_CHARS` dua tren validation truoc khi dung pipeline-lite lam default.
+- [ ] Neu pipeline-lite cham qua, tat `USE_STAGE_D_REFINE` hoac giam refine cap de giu runtime Kaggle trong budget.
+- [ ] Neu muon harden notebook goc, port cac fix an toan tu pipeline-lite: giu `[illegible]`, retry OCR single crop khi batch fail va bao missing outputs khi merge.
 
 ## 6. 📂 Cấu trúc thư mục cốt lõi (Core Structure)
 - `baseline/`: Baseline zero-shot va ket qua submit tham chieu.
 - `finetune/`: Notebook Stage 1/2, inference/submission hai-pass, train LoRA, spell-check va ket qua fine-tune.
+- `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb`: Kaggle hybrid baseline YOLO layout + Qwen3-VL LoRA crop OCR, da refactor path va source-aware Stage B prompt.
+- `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb`: Ban copy de thu Stage C/D/E Lite voi risk gate, high-risk reread va metric-aware postprocess.
 - `phaseB2/`: Runner `.py only` cho B2 baseline cache, readiness check, config template, metric/cache helpers, FP16/batch runtime diagnostics.
 - `MainPipeline/`: Pipeline retrain moi; chua docs Phase 1/2/3, configs, prompts, scripts build/train/infer/validate/analyze cho Phase 1.
 - `MainPipeline/src/common/`: IO/config, schema, bbox, prompts, JSON parse va scoring utilities dung chung.
