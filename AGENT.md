@@ -8,6 +8,8 @@
 - **MainPipeline Phase 1:** Da chot contract Phase 1 chi bat Stage A layout-only, Stage B crop OCR va Stage E assembly/schema guardrail; Stage C/D chua bat trong Phase 1.
 - **Kaggle hybrid notebook hien tai:** `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb` la baseline YOLO + Qwen3-VL LoRA: YOLO detect bbox/type, Qwen OCR crop theo type/source hint, merge submission CSV.
 - **Kaggle pipeline-lite notebook:** Da tao ban thu nghiem rieng `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` de ablation Stage C/D/E lite ma khong ghi de notebook goc.
+- **Stage 2B hard-type:** Da tach build dataset augment va fine-tune tu cache cho `formula/table/annotation`; prompt fine-tune dong bo voi lite pipeline.
+- **Stage 2C formula/table Colab:** `finetune/yolo_qwen_end_to_end/formula_table_aug_colab_a100_4bit_bf16.ipynb` fine-tune tiep starting LoRA tren crop `formula/table` aug; crop zip copy tu Drive sang local Colab truoc khi train.
 - **Huong dang debug tren VM:** Chay lai B2 `.py only` tren RTX A6000 48GB de xac nhan runtime; batch 24 da chay trong `tmux` nhung CUDA driver `free` giam dan sau moi batch, nen batch 24 chi xem la aggressive/benchmark, khong mac dinh production-safe.
 
 ## 2. 🛠️ Công nghệ đã sử dụng (Tech Stack)
@@ -19,6 +21,8 @@
 - **Runtime B2 tren A6000:** Uu tien FP16 (`load_in_4bit=false`) va batch page generation; batch 16/12 la fallback on dinh hon, batch 24 chi dung khi chap nhan rui ro VRAM do CUDA workspace/free-memory drift; 4-bit chi la fallback khi OOM/GPU nho.
 - **MainPipeline Phase 1 runtime:** Cau hinh rieng cho RTX A6000 48GB, Qwen3-VL + LoRA qua TRL `SFTTrainer`; model load FP16, LoRA trainable params FP32, co 4-bit fallback neu OOM.
 - **VM operation:** Dung `tmux` de giu job khi mat SSH/internet; log baseline ghi qua `tee` vao `logs/`.
+- **Stage 2B cache-first:** Build hard-type aug data co the chay local bang PIL; fine-tune tren Kaggle load cached crops/JSONL va resume checkpoint.
+- **Stage 2C Colab A100:** Qwen3-VL 4-bit NF4 + BF16, TRL/SFTTrainer, PEFT LoRA; Drive layout canonical `data/model/adapter/resume/output`, trong do `adapter/` bat buoc va `resume/` optional.
 - **Metric:** IoU matching, class accuracy, CER/PageCER, text normalization theo official-compatible metric.
 
 ## 3. ✅ Công việc đã hoàn thành (Completed Tasks)
@@ -72,6 +76,13 @@
 - [x] Them rule risk cho pipeline-lite: OCR rong, `formula/table` qua ngan, `formula/table` qua dai, text lap nhieu, output JSON/Markdown/explanation, bbox nho hoac aspect ratio bat thuong.
 - [x] Them Stage D Lite cho pipeline-lite: reread high-risk bang zoom crop + expanded crop, chi thay text khi reread co chat luong tot hon text cu.
 - [x] Them Stage E Lite cho pipeline-lite: enforce `image/graph` text rong, dedupe overlap nhe, sort reading order theo line grouping va fail neu thieu output thay vi im lang fill `[]`.
+- [x] Tao Stage 2B split notebooks: build hard-type augmented crop cache va fine-tune tu cached dataset rieng.
+- [x] Build local `artifacts/stage2b_hardtype_aug_data/`: 14,393 samples, gom prompt config, validation records va cached crops.
+- [x] Chinh Stage 2B sampling: `table` augment x7, `formula/annotation` x3, `handwritten` replay giu 50%, `printed` giu 100%.
+- [x] Them Stage 2B train controls: single-path config, checkpoint moi 500 step, resume checkpoint, print moi 10 optimizer step va epoch-based training.
+- [x] Tao notebook Stage 2C Colab A100 `formula_table_aug_colab_a100_4bit_bf16.ipynb` cho fine-tune rieng `formula/table` tu dataset crop aug.
+- [x] Them buoc copy crop dataset zip tu Drive sang `/content/rukopys/data`, giai nen local va train tu file local de giam I/O cham cua Drive.
+- [x] Don path Stage 2C ve layout Drive canonical `data/model/adapter/resume/output`; tach ro starting LoRA adapter bat buoc va trainer resume optional.
 
 ## 4. 🐛 Những lỗi đã khắc phục (Fixed Bugs)
 - **Bug 1: Sai/khong nhat quan bbox format** -> **Fix:** Chuan hoa ve `[x1, y1, x2, y2]`, ho tro normalized, pixel va 0-1000 grid.
@@ -104,6 +115,12 @@
 - **Kaggle hybrid issue 28: Source prompt crop OCR chua lay tu metadata test** -> **Fix:** Truyen `rec.get("source")` tu `metadata.jsonl` vao `infer_one_image -> ocr_regions -> crop_messages -> build_crop_prompt`.
 - **Pipeline-lite issue 29: `[illegible]` co the bi xoa neu xem nhu JSON list loi** -> **Fix:** Trong notebook pipeline-lite, `clean_crop_text` giu `[illegible]` va chi parse JSON khi co wrapper hop le.
 - **Pipeline-lite issue 30: Partial CSV co nguy co tron voi baseline** -> **Fix:** Doi prefix checkpoint rieng thanh `hybrid_pipeline_lite_partial_results_gpu`.
+- **Stage2B issue 31: Prompt fine-tune lech lite pipeline** -> **Fix:** Dung cung source hint + type prompt + marker rules + Stage B guardrail khi build crop samples.
+- **Stage2B issue 32: Notebook train kho resume va config path qua roi** -> **Fix:** Tach cache/train, dung single path variables, checkpoint moi 500 step va auto/manual resume.
+- **Stage2B issue 33: Print progress dung `max_steps` tu bien set tay** -> **Fix:** Doi sang `num_train_epochs` de Trainer tinh tong step thuc te tu dataset/batch/grad accumulation.
+- **Stage2C issue 34: Nhap nhang giua starting LoRA va trainer resume** -> **Fix:** Tach `adapter/` bat buoc cho starting LoRA va `resume/` optional cho checkpoint; resume rong thi chay fresh Stage 2C tu adapter.
+- **Stage2C issue 35: Path Drive roi giua `output/outputs`, `model/models` va `resume/rukopys`** -> **Fix:** Chuan hoa layout Drive thanh `data/model/adapter/resume/output`.
+- **Stage2C issue 36: Doc crop truc tiep tu Drive cham** -> **Fix:** Copy zip crop tu Drive sang local Colab va giai nen truoc khi train.
 
 ## 5. 🚀 Công việc tiếp theo (Current / Pending Tasks)
 - [ ] Sau khi B2 VM run ket thuc, verify `validation_predictions.csv`, `validation_raw_outputs.jsonl`, row count 159, score summary, runtime summary va checksum truoc khi dung cho Phase C.
@@ -129,12 +146,21 @@
 - [ ] Tune `REFINE_RISK_THRESHOLD`, `MAX_REFINE_REGIONS_PER_PAGE`, `FORMULA_MAX_CHARS`, `TABLE_MAX_CHARS` dua tren validation truoc khi dung pipeline-lite lam default.
 - [ ] Neu pipeline-lite cham qua, tat `USE_STAGE_D_REFINE` hoac giam refine cap de giu runtime Kaggle trong budget.
 - [ ] Neu muon harden notebook goc, port cac fix an toan tu pipeline-lite: giu `[illegible]`, retry OCR single crop khi batch fail va bao missing outputs khi merge.
+- [ ] Chay Kaggle Stage 2B fine-tune tu cached data, quyet dinh `NUM_TRAIN_EPOCHS=1` hay `3`, monitor checkpoint/resume.
+- [ ] Validate Stage 2B adapter tren validation/subset, xem gain/loss rieng cho `formula/table/annotation` va prose OCR.
+- [ ] Hoan tat Stage 2C Colab A100 formula/table run, monitor loss/checkpoint va luu final adapter vao Drive `output/`.
+- [ ] Validate Stage 2C adapter tren validation/subset, so sanh gain/loss rieng cho `formula/table` voi adapter truoc do.
+- [ ] Neu PEFT warning base path Kaggle cu gay nham lan, sanitize adapter metadata/base path khi save final adapter.
 
 ## 6. 📂 Cấu trúc thư mục cốt lõi (Core Structure)
 - `baseline/`: Baseline zero-shot va ket qua submit tham chieu.
 - `finetune/`: Notebook Stage 1/2, inference/submission hai-pass, train LoRA, spell-check va ket qua fine-tune.
 - `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb`: Kaggle hybrid baseline YOLO layout + Qwen3-VL LoRA crop OCR, da refactor path va source-aware Stage B prompt.
 - `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb`: Ban copy de thu Stage C/D/E Lite voi risk gate, high-risk reread va metric-aware postprocess.
+- `finetune/yolo_qwen_end_to_end/rukopys_qwen3vl_stage2b_build_hardtype_aug_dataset.ipynb`: Build/cache Stage 2B hard-type augmented crops va manifest JSONL.
+- `finetune/yolo_qwen_end_to_end/rukopys_qwen3vl_stage2b_finetune_from_aug_dataset.ipynb`: Fine-tune Stage 2B tu cached crop dataset voi checkpoint/resume.
+- `finetune/yolo_qwen_end_to_end/formula_table_aug_colab_a100_4bit_bf16.ipynb`: Stage 2C Colab A100 fine-tune `formula/table`; copy zip crop tu Drive sang local disk, starting adapter tu Drive `adapter/`, resume optional tu `resume/`.
+- `artifacts/stage2b_hardtype_aug_data/`: Generated Stage 2B crop cache, manifest, prompt config va validation records; khong commit.
 - `phaseB2/`: Runner `.py only` cho B2 baseline cache, readiness check, config template, metric/cache helpers, FP16/batch runtime diagnostics.
 - `MainPipeline/`: Pipeline retrain moi; chua docs Phase 1/2/3, configs, prompts, scripts build/train/infer/validate/analyze cho Phase 1.
 - `MainPipeline/src/common/`: IO/config, schema, bbox, prompts, JSON parse va scoring utilities dung chung.

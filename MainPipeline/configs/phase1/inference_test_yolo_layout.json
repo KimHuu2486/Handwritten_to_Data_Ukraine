@@ -31,7 +31,7 @@
     "max_new_tokens_stage_b": 1024,
     "image_batch_size": 5,
     "stage_b_batch_size": 64,
-    "crop_pad_ratio": 0.02
+    "crop_pad_ratio": 0.0
   },
   "output": {
     "predictions_csv": "artifacts/main_pipeline/phase1/predictions/phase1_test_yolo_layout_predictions_debug.csv",

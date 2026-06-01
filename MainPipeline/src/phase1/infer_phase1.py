@@ -339,7 +339,7 @@ def build_page_state_from_regions(
             continue
 
         crop_path = crops_dir / f"{Path(str(row.get('file_name', 'image'))).stem}__pred_{region_index:04d}__{region_type}.jpg"
-        crop_region(image_path, region["bbox"], crop_path, float(generation_cfg.get("crop_pad_ratio", 0.02)))
+        crop_region(image_path, region["bbox"], crop_path, float(generation_cfg.get("crop_pad_ratio", 0.0)))
         pending_stage_b.append(
             {
                 "region_index": region_index,

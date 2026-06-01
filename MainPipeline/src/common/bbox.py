@@ -68,15 +68,15 @@ def grid_to_pixel_bbox(bbox: list[float], image_width: int, image_height: int, g
     )
 
 
-def padded_bbox(bbox: list[int], image_width: int, image_height: int, pad_ratio: float = 0.02) -> list[int]:
-    """Expand a bbox by a small ratio to avoid cutting off handwritten strokes."""
+def padded_bbox(bbox: list[int], image_width: int, image_height: int, pad_ratio: float = 0.0) -> list[int]:
+    """Optionally expand a bbox by a caller-provided ratio."""
     x1, y1, x2, y2 = bbox
     pad_x = (x2 - x1) * pad_ratio
     pad_y = (y2 - y1) * pad_ratio
     return clamp_bbox([x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y], image_width, image_height)
 
 
-def crop_region(image_path: Path, bbox: list[int], output_path: Path, pad_ratio: float = 0.02) -> tuple[int, int]:
+def crop_region(image_path: Path, bbox: list[int], output_path: Path, pad_ratio: float = 0.0) -> tuple[int, int]:
     """Crop one region to disk and return the crop width/height."""
     from PIL import Image
 

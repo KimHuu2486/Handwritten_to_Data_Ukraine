@@ -1,0 +1,5 @@
+python tools/validation_compare.py `
+  --pred full=tools/full_validation_pred.csv `
+  --pred lite=tools/lite_validation_pred.csv `
+  --pred hybrid=tools/hybrid_validation_pred.csv `
+  --out-dir artifacts/validation_compare

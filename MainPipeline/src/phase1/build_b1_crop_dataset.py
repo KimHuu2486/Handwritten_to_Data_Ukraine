@@ -70,7 +70,7 @@ def build_examples(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str,
     max_records = cfg.get("max_records")
     max_regions = cfg.get("max_regions")
     max_pixels_crop = int(cfg.get("max_pixels_crop", 262144))
-    pad_ratio = float(cfg.get("crop_pad_ratio", 0.02))
+    pad_ratio = float(cfg.get("crop_pad_ratio", 0.0))
     skip_missing_images = bool(cfg.get("skip_missing_images", True))
     num_workers = max(int(cfg.get("num_workers", 1)), 1)
 
