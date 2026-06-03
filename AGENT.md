@@ -7,6 +7,7 @@
 - **Huong pipeline moi:** Stage A gom source-aware layout + deterministic `page_context_light` -> Stage B type-aware OCR voi `ocr_context_light` -> Stage C weighted risk gate -> Stage D multi-view/refine voi `risk_rerank_context_light` -> Stage E metric-aware assembly.
 - **MainPipeline Phase 1:** Da chot contract Phase 1 chi bat Stage A layout-only, Stage B crop OCR va Stage E assembly/schema guardrail; Stage C/D chua bat trong Phase 1.
 - **Kaggle hybrid notebook hien tai:** `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb` la baseline YOLO + Qwen3-VL LoRA: YOLO detect bbox/type, Qwen OCR crop theo type/source hint, merge submission CSV.
+- **Kaggle hybrid V2:** `rukopys_yolo_qwen3vl_hybrid_submit_V2.ipynb` da thay YOLO don bang DocLayout-YOLO v5 ensemble 5 weights tu `htd-box-submit-3-fold.ipynb`, giu Qwen3-VL LoRA OCR crop phia sau.
 - **Kaggle pipeline-lite notebook:** Da tao ban thu nghiem rieng `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` de ablation Stage C/D/E lite ma khong ghi de notebook goc.
 - **Stage 2B hard-type:** Da tach build dataset augment va fine-tune tu cache cho `formula/table/annotation`; prompt fine-tune dong bo voi lite pipeline.
 - **Stage 2C formula/table Colab:** `finetune/yolo_qwen_end_to_end/formula_table_aug_colab_a100_4bit_bf16.ipynb` fine-tune tiep starting LoRA tren crop `formula/table` aug; crop zip copy tu Drive sang local Colab truoc khi train.
@@ -17,6 +18,7 @@
 - **Backend/Server:** Khong co server rieng; pipeline batch offline.
 - **Database:** Khong dung DB; du lieu o JSONL/CSV.
 - **Thu vien/chay may:** Python, PyTorch, Transformers, TRL/SFTTrainer, PEFT LoRA/QLoRA, bitsandbytes khi can 4-bit fallback, qwen-vl-utils, Hugging Face Hub, PIL, pandas, multiprocessing.
+- **Layout detector:** DocLayout-YOLO/YOLOv10; V2 submit co che do ensemble nhieu checkpoint voi NMS per-class, weighted bbox average va label voting theo confidence.
 - **Model chinh:** Qwen3-VL-8B cho detection+transcription end-to-end; Qwen2.5-1.5B-Instruct cho spell-check text hau xu ly.
 - **Runtime B2 tren A6000:** Uu tien FP16 (`load_in_4bit=false`) va batch page generation; batch 16/12 la fallback on dinh hon, batch 24 chi dung khi chap nhan rui ro VRAM do CUDA workspace/free-memory drift; 4-bit chi la fallback khi OOM/GPU nho.
 - **MainPipeline Phase 1 runtime:** Cau hinh rieng cho RTX A6000 48GB, Qwen3-VL + LoRA qua TRL `SFTTrainer`; model load FP16, LoRA trainable params FP32, co 4-bit fallback neu OOM.
@@ -72,6 +74,8 @@
 - [x] Doc va tom tat luong du lieu cua notebook Kaggle hybrid YOLO + Qwen3-VL: metadata -> YOLO regions -> crop OCR -> partial CSV theo GPU -> merge `submission.csv`.
 - [x] Refactor path config trong notebook Kaggle hybrid: gom `BASE_MODEL_PATH`, `LORA_ADAPTER_DIR`, `DATASET_ROOT`, `YOLO_WEIGHTS_PATH`; giu `DOCLAYOUT_REPO_CANDIDATES` de import fallback.
 - [x] Cap nhat Stage B prompt trong notebook Kaggle hybrid: prompt crop OCR ghep `source hint` tu metadata test + instruction theo `type` + marker rules + guardrail.
+- [x] Tich hop bbox detect moi vao `rukopys_yolo_qwen3vl_hybrid_submit_V2.ipynb`: load 5 DocLayout-YOLO v5 weights, chay NMS tung model, ensemble bbox bang IoU/confidence va vote type theo tong confidence.
+- [x] Kiem tra V2 sau khi sua: notebook JSON hop le, code cell parse AST OK, khong con single-weight V4.1 reference va smoke-test contract ensemble bang fake regions.
 - [x] Tao notebook moi `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` tu baseline de thu Stage C risk gate, Stage D reread high-risk va Stage E metric-aware postprocess.
 - [x] Them rule risk cho pipeline-lite: OCR rong, `formula/table` qua ngan, `formula/table` qua dai, text lap nhieu, output JSON/Markdown/explanation, bbox nho hoac aspect ratio bat thuong.
 - [x] Them Stage D Lite cho pipeline-lite: reread high-risk bang zoom crop + expanded crop, chi thay text khi reread co chat luong tot hon text cu.
@@ -142,6 +146,7 @@
 - [ ] Neu OCR crop dai van bi truncation, can nhac tang `max_new_tokens_stage_b` tiep hoac tach table/region lon bang refine policy o Phase 2.
 - [ ] Neu can production hardening, them guardrail phat hien bbox raw pixel >1000 do model khong tuan grid va fallback normalize rieng.
 - [ ] Chay Kaggle smoke voi `TEST_MODE=True` cho `rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb` de xac nhan import, memory va partial merge.
+- [ ] Chay Kaggle smoke/full run cho `rukopys_yolo_qwen3vl_hybrid_submit_V2.ipynb` sau khi doi sang YOLO ensemble; theo doi VRAM vi moi worker load Qwen + 5 YOLO models.
 - [ ] So sanh baseline notebook voi pipeline-lite tren validation/subset: score, runtime, so region refined, ty le text bi thay va breakdown theo `source/type`.
 - [ ] Tune `REFINE_RISK_THRESHOLD`, `MAX_REFINE_REGIONS_PER_PAGE`, `FORMULA_MAX_CHARS`, `TABLE_MAX_CHARS` dua tren validation truoc khi dung pipeline-lite lam default.
 - [ ] Neu pipeline-lite cham qua, tat `USE_STAGE_D_REFINE` hoac giam refine cap de giu runtime Kaggle trong budget.
@@ -156,6 +161,8 @@
 - `baseline/`: Baseline zero-shot va ket qua submit tham chieu.
 - `finetune/`: Notebook Stage 1/2, inference/submission hai-pass, train LoRA, spell-check va ket qua fine-tune.
 - `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit.ipynb`: Kaggle hybrid baseline YOLO layout + Qwen3-VL LoRA crop OCR, da refactor path va source-aware Stage B prompt.
+- `finetune/yolo_qwen_end_to_end/htd-box-submit-3-fold.ipynb`: Notebook bbox-only DocLayout-YOLO v5 ensemble; source logic cho V2 detector moi.
+- `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit_V2.ipynb`: Hybrid submit V2 dung YOLO ensemble 5 weights cho bbox/type, sau do Qwen3-VL LoRA OCR crop va merge partial CSV.
 - `finetune/yolo_qwen_end_to_end/rukopys_yolo_qwen3vl_hybrid_submit_pipeline_lite.ipynb`: Ban copy de thu Stage C/D/E Lite voi risk gate, high-risk reread va metric-aware postprocess.
 - `finetune/yolo_qwen_end_to_end/rukopys_qwen3vl_stage2b_build_hardtype_aug_dataset.ipynb`: Build/cache Stage 2B hard-type augmented crops va manifest JSONL.
 - `finetune/yolo_qwen_end_to_end/rukopys_qwen3vl_stage2b_finetune_from_aug_dataset.ipynb`: Fine-tune Stage 2B tu cached crop dataset voi checkpoint/resume.
