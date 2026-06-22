@@ -1,0 +1,16 @@
+accelerate
+bitsandbytes
+dill
+einops
+opencv-python-headless
+pandas==2.2.2
+peft>=0.18.0
+pillow<12
+qwen-vl-utils
+safetensors
+sentencepiece
+timm
+torchvision==0.20.1
+ultralytics
+git+https://github.com/huggingface/transformers.git
+git+https://github.com/opendatalab/DocLayout-YOLO.git

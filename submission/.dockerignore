@@ -1,0 +1,17 @@
+data_test/
+_smoke_output/
+_normal_check/
+*.ipynb
+*.csv
+*.log
+*.tmp
+qwen_download.pid
+kaggle.json
+download_qwen.py
+qwen3vl_8b_instruct/.cache/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+hybrid_prompt_v2_partial_results_gpu*.csv
+qwen3vl_lora_adapter/gold_validation_records.jsonl
+qwen3vl_lora_adapter/README.md
