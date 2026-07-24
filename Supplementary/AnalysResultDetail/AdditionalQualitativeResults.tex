@@ -1,0 +1,286 @@
+\PassOptionsToPackage{T2A,T1}{fontenc}
+\documentclass[runningheads]{llncs}
+
+% ---------------------------------------------------------------
+% Include basic ACCV package
+
+% TODO REVIEW: Insert your submission number below by replacing '*****'
+% TODO FINAL: Comment out the following line for the camera-ready version
+\usepackage[review,year=2026,ID=548]{accv}
+% TODO FINAL: Un-comment the following line for the camera-ready version
+%\usepackage{accv}
+
+% ---------------------------------------------------------------
+% Other packages
+
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[accsupp]{axessibility}
+\usepackage{array}
+\usepackage{placeins}
+\usepackage[russian,english]{babel}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{ragged2e}
+
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\metrichead}[1]{#1}
+\newcommand{\tablenote}[1]{\vspace{2pt}\par\raggedright\scriptsize #1\par}
+
+\graphicspath{{figure/}{./}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.42em}
+\setlist[itemize]{leftmargin=1.35em,itemsep=0.12em,topsep=0.12em}
+\captionsetup{font=small,labelfont=bf,labelsep=period}
+\renewcommand{\arraystretch}{1.10}
+\setlength{\tabcolsep}{4.5pt}
+
+\newcommand{\metric}[1]{\textbf{#1}}
+\newcommand{\imgheight}{0.805\textheight}
+\newcommand{\gridheight}{0.790\textheight}
+\newcommand{\tightcaption}{\vspace{-0.2em}}
+\newcommand{\CropNormal}{0.35\linewidth}
+\newcommand{\CropWide}{0.63\linewidth}
+\newcommand{\CropFull}{0.98\linewidth}
+\newcommand{\CropCard}[2]{%
+  \begin{minipage}[t]{#1}
+    \centering
+    \includegraphics[width=\linewidth]{#2}
+  \end{minipage}%
+}
+
+% Place figure-only float pages near the top instead of vertical centering.
+\makeatletter
+\setlength{\@fptop}{0pt}
+\setlength{\@fpsep}{8pt plus 1fil}
+\setlength{\@fpbot}{0pt plus 1fil}
+\makeatother
+
+% ---------------------------------------------------------------
+% Hyperref package
+
+% TODO FINAL: Comment out the following line for the camera-ready version
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+% TODO FINAL: Un-comment the following line for the camera-ready version
+%\usepackage{hyperref}
+
+\usepackage{orcidlink}
+
+\begin{document}
+
+\title{BoustoDoc: A Type-Aware Hybrid Pipeline for Low-Resource Ukrainian Handwritten Document Understanding \\
+\small Supplementary Material for Qualitative Results}
+\titlerunning{Type-Aware Hybrid Recognition}
+
+% The review style anonymizes author information. Replace this block for camera-ready.
+\author{Anonymous ACCV Submission}
+\authorrunning{Anonymous}
+\institute{Paper ID 548}
+
+\maketitle
+
+\begin{abstract}
+This supplementary document provides additional qualitative examples for the final type-aware hybrid pipeline. The goal is to make the behavior of the detector, region classifier, router, and recognition branches easier to inspect beyond the aggregate tables in the main paper. Section~\ref{sec:guide} explains how to read the visualizations. Section~\ref{sec:full-page} presents five full-page examples, with one figure per page. Section~\ref{sec:crop-level} presents crop-level grids that show successful cases, near-correct predictions, and representative failures. Section~\ref{sec:analysis} analyzes qualitative failure modes. Section~\ref{sec:summary} summarizes the qualitative trends.
+\end{abstract}
+
+\section{Reading Guide}
+\label{sec:guide}
+
+Each visualization shows the final pipeline output after detection, region-type classification, type-aware routing, and recognition when text should be produced. The colored region label follows the format \texttt{predicted type | routed branch}. Thus, \texttt{handwritten | TrOCR} means that the crop is classified as handwritten text and sent to the TrOCR branch, while \texttt{formula | Qwen3-VL} means that it is routed to the Qwen3-VL branch. Image and graph regions are routed to the empty-text branch.
+
+The page-level diagnostics have the following meaning. \metric{Det-F1} (detection F1 score) measures detection quality after IoU-based matching. \metric{ClassAcc} measures the correctness of the predicted region type among matched boxes. \metric{Matched Region CER} measures text recognition quality after official normalization on text-bearing matched regions. It is used as a qualitative
+diagnostic for the recognition branches and should not be confused with \metric{Page CER}, which measures the assembled page-level transcription. \metric{Type conf.} counts matched regions whose box is correct but whose predicted type is different from the ground truth.
+
+The crop-level cards provide a closer view of individual matched regions. Each card reports the source image, status, ground-truth type, predicted type, routed branch, IoU, normalized CER when applicable, ground-truth text, predicted text, and a short diagnostic note. These examples are intended to complement, not replace, the quantitative evaluation in the main paper.
+
+\section{Full-Page Examples}
+\label{sec:full-page}
+
+The full-page examples cover different document sources and layout types: school arithmetic pages, dictation pages, university formula-heavy pages, archive-style handwritten, and sparse pages with ambiguous short regions. Each full-page figure is placed separately so that the detection boxes, predicted types, routes, and page diagnostics remain readable. Table~\ref{tab:full-page-summary} provides a compact summary of the five full-page examples, including their sources, content types, Det-F1, ClassAcc, Matched CER, and type-confusion counts.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Summary of the full-page qualitative examples. The values correspond to the diagnostics displayed in Figures~\ref{fig:supp-full-page-01}--\ref{fig:supp-full-page-05}.}
+\label{tab:full-page-summary}
+
+\setlength{\tabcolsep}{2.2pt}
+\renewcommand{\arraystretch}{1.12}
+
+\begin{tabularx}{\linewidth}{@{}llXcccc@{}}
+\toprule
+Example & Source & Content & Det-F1 & ClsAcc & M-CER & TypeConf. \\
+\midrule
+Fig.~\ref{fig:supp-full-page-01}
+& school
+& formula, table, handwritten, annotation
+& 1.000 & 0.900 & 0.036 & 1 \\
+
+Fig.~\ref{fig:supp-full-page-02}
+& dictation
+& long handwritten
+& 0.917 & 1.000 & 0.004 & 0 \\
+
+Fig.~\ref{fig:supp-full-page-03}
+& university
+& formulas and handwritten
+& 0.966 & 0.964 & 0.043 & 1 \\
+
+Fig.~\ref{fig:supp-full-page-04}
+& archive
+& dense historical handwritten
+& 1.000 & 1.000 & 0.122 & 0 \\
+
+Fig.~\ref{fig:supp-full-page-05}
+& school
+& short ambiguous regions
+& 0.872 & 0.647 & 0.185 & 6 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{0.35em}
+\begin{minipage}{\linewidth}
+\scriptsize
+\raggedright
+M-CER denotes Matched Region CER. \\
+TypeConf. denotes the number of matched regions with type confusion.
+\end{minipage}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{figure/full_page_example_01_clean.png}
+\caption{
+Full-page qualitative result for a school page with formulas, tables,
+annotations, and handwritten regions. The page obtains Det-F1=1.000,
+ClassAcc=0.900, and Matched Region CER=0.036. The main remaining error is one
+type confusion between visually similar table-like and formula-like regions.
+}
+\label{fig:supp-full-page-01}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{figure/full_page_example_02_clean.png}
+\caption{
+Full-page qualitative result for a dictation page dominated by long
+handwritten text lines. The page obtains Det-F1=0.917, ClassAcc=1.000,
+and Matched Region CER=0.004. Most matched regions have correct type labels, while the remaining errors come from missed and extra detected regions.
+}
+\label{fig:supp-full-page-02}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{figure/full_page_example_03_clean.png}
+\caption{
+Full-page qualitative result for a university page with dense formulas,
+handwritten, and an image stamp. The page obtains Det-F1=0.966,
+ClassAcc=0.964, and Matched Region CER=0.043. Most formula regions are routed to Qwen3-VL and handwritten regions to TrOCR, with one remaining type
+confusion near the handwritten/formula boundary.
+}
+\label{fig:supp-full-page-03}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{figure/full_page_example_04_clean.png}
+\caption{
+Full-page qualitative result for an archive page with dense historical
+handwritten and annotation regions. The page obtains Det-F1=1.000,
+ClassAcc=1.000, and Matched Region CER=0.122. Detection and type prediction are correct for all matched regions, while the main difficulty is recognizing
+older and dense handwritten.
+}
+\label{fig:supp-full-page-04}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\linewidth]{figure/full_page_example_05_clean.png}
+\caption{
+Full-page qualitative result for a sparse school page with short handwritten
+fragments and formula-like numeric expressions. This is a harder case, with
+Det-F1=0.872, ClassAcc=0.647, and Matched Region CER=0.185. The example shows six type-confusion cases between ordinary handwritten and formula-like regions.
+}
+\label{fig:supp-full-page-05}
+\end{figure}
+\FloatBarrier
+
+\section{Crop-Level Examples}
+\label{sec:crop-level}
+
+The crop-level examples provide a closer view of individual matched regions from different document sources and region types. Each example shows the crop together with its ground-truth label, predicted label, routed branch, IoU, normalized CER when applicable, and a short diagnostic note. These examples highlight both successful recognition cases and common errors that are less visible in full-page visualizations.
+
+\begin{figure}[H]
+\centering
+\CropCard{\CropFull}{figure/crops/crop_01_handwritten_correct.png}
+\par\vspace{0.55em}
+\CropCard{\CropFull}{figure/crops/crop_02_printed_correct.png}
+\caption{Successful crop-level examples for handwritten and printed text. The regions are correctly detected, assigned to the HPA types, and routed to TrOCR, resulting in low normalized CER after official text normalization.}
+\label{fig:crop-correct-lines}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\CropCard{\CropWide}{figure/crops/crop_03_formula_near_correct.png}
+\hfill
+\CropCard{\CropNormal}{figure/crops/crop_07_annotation_near_correct.png}
+\par\vspace{0.55em}
+\CropCard{\CropWide}{figure/crops/crop_05_table_correct.png}
+\hfill
+\CropCard{\CropNormal}{figure/crops/crop_11_image_correct.png}
+\caption{Successful and near-correct crop-level examples for formula, table, annotation, and image regions. The examples illustrate type-aware routing: formula and table regions are transcribed by Qwen3-VL, annotation regions by TrOCR, and image regions receive empty text as required by the output schema.}
+\label{fig:crop-correct-structured}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\CropCard{\CropFull}{figure/crops/crop_04_formula_failure.png}
+\par\vspace{0.55em}
+\CropCard{\CropFull}{figure/crops/crop_09_handwritten_type_confusion.png}
+\caption{Long crop-level failure cases. The first crop shows a formula
+transcription error despite correct routing to Qwen3-VL. The second crop shows a type-confusion error, where a handwritten region is predicted as formula and routed to the wrong branch. Normalized CER can exceed 1.0 when the predicted string is much longer than the ground truth.}
+\end{figure}
+
+\begin{figure}[!t]
+\centering
+\CropCard{\CropWide}{figure/crops/crop_06_table_failure.png}
+\hfill
+\CropCard{\CropNormal}{figure/crops/crop_08_annotation_type_confusion.png}
+\par\vspace{0.55em}
+\CropCard{\CropWide}{figure/crops/crop_10_printed_type_confusion.png}
+\hfill
+\CropCard{\CropNormal}{figure/crops/crop_12_formula_type_confusion.png}
+\caption{Mixed crop-level failure cases. The examples show errors from table serialization, type confusion, and incorrect routing. They illustrate that even well-localized regions can produce incorrect outputs when the predicted type or structured transcription is wrong.}
+\label{fig:crop-failures-mixed}
+\end{figure}
+\FloatBarrier
+
+\section{Qualitative Analysis}
+\label{sec:analysis}
+
+These examples suggest four main observations. First, detection is stable on structured pages, especially when the page contains clear line-like regions, repeated formula or table patterns, or dense handwriting. The remaining detection errors are more visible near page borders, small stamps, and sparse regions with weak visual boundaries.
+
+Second, the routing strategy is effective when the predicted type is correct. Handwritten, printed, and annotation regions benefit from the TrOCR branch, while formula and table regions benefit from the Qwen3-VL branch. However, type confusion remains important because the predicted type directly controls the downstream route. The most ambiguous cases are short numeric fragments, annotation-like marks, and handwritten snippets that look similar to formulas.
+
+Third, formula and table regions are difficult even after correct detection and routing. The failure examples show that spatial mathematical and tabular structure can be partially lost when the crop is converted into a serialized text output. This helps explain why formula and table crops can have higher CER than ordinary handwritten or printed text crops.
+
+Fourth, empty-text routing is useful for non-text regions such as images and graphs. It prevents the system from hallucinating text for regions that should not produce a transcription. However, it still depends on correct region-type prediction, so image--annotation
+and graph--text confusion can still lead to downstream errors.
+
+\section{Summary}
+\label{sec:summary}
+
+These qualitative results complement the quantitative results in the main paper. The full-page examples show how detection, lassification, routing, and recognition interact across heterogeneous document layouts. The crop-level examples make the remaining errors more concrete, including type confusion between handwritten and formula-like regions, annotation-related confusion, and structural serialization errors in formula and table outputs. Overall, the examples illustrate why type-aware routing is useful for this mixed-region document understanding task.
+
+% ---- Bibliography ----
+% \bibliographystyle{splncs04}
+% \bibliography{main}
+\end{document}

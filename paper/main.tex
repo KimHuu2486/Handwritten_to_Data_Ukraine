@@ -1,0 +1,501 @@
+\documentclass[runningheads]{llncs}
+
+% ---------------------------------------------------------------
+% Include basic ACCV package
+
+% TODO REVIEW: Insert your submission number below by replacing '*****'
+% TODO FINAL: Comment out the following line for the camera-ready version
+\usepackage[review,year=2026,ID=548]{accv}
+% TODO FINAL: Un-comment the following line for the camera-ready version
+%\usepackage{accv}
+
+% ---------------------------------------------------------------
+% Other packages
+
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[accsupp]{axessibility}
+\usepackage{array}
+\usepackage{placeins}
+\usepackage[russian,english]{babel}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\metrichead}[1]{#1}
+\newcommand{\tablenote}[1]{\vspace{2pt}\par\raggedright\scriptsize #1\par}
+
+% ---------------------------------------------------------------
+% Hyperref package
+
+% TODO FINAL: Comment out the following line for the camera-ready version
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+% TODO FINAL: Un-comment the following line for the camera-ready version
+%\usepackage{hyperref}
+
+\usepackage{orcidlink}
+
+\begin{document}
+
+\title{BoustoDoc: A Type-Aware Hybrid Pipeline for Low-Resource Ukrainian Handwritten Document Understanding}
+\titlerunning{Type-Aware Hybrid Recognition}
+
+% The review style anonymizes author information. Replace this block for camera-ready.
+\author{Anonymous ACCV Submission}
+\authorrunning{Anonymous}
+\institute{Paper ID *****}
+
+\maketitle
+
+\begin{abstract}
+Low-resource handwritten document understanding is difficult when a page contains mixed visual content. In RUKOPYS, Ukrainian pages may include handwritten text, printed text, formulas, tables, annotations, images, and graphs. The task requires detecting regions, assigning region types, and transcribing only the regions that need text. We study this setting as a type-aware routing problem rather than as a single optical character recognition (OCR) problem. Our pipeline first uses DocLayout-YOLO to detect regions and predict one of seven region types. It then routes handwritten, printed, and annotation regions to a Cyrillic Transformer-based OCR (TrOCR) branch, routes formula and table regions to a Qwen3-VL branch with low-rank adaptation (LoRA), and assigns empty text to image and graph regions. Under an internal page-level protocol, BoustoDoc achieves an official-style score of 0.8615. A gold-layout routing ablation provides evidence that type-aware specialization improves over using either recognizer alone.
+  \keywords{Ukrainian documents \and Document understanding \and Handwritten OCR \and low-resource learning \and Region routing \and Vision-language models}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Handwritten document understanding is more difficult than plain optical character recognition (OCR) because a page often contains many kinds of visual content. A system must not only read text, but also locate regions, assign region types, and decide whether each region should produce a transcription. This is especially important for Ukrainian handwritten documents, where public annotated data and pretrained recognizers are still limited compared with high-resource OCR settings.
+
+We study this problem on RUKOPYS~\cite{rukopys_2026}, a Ukrainian handwritten document dataset with heterogeneous page sources and seven region types. The dataset contains nation dictation, state archive, university and school homework. These pages may contain handwritten lines, printed text, formulas, tables, annotations, images, and graphs. The target output is a list of regions, where each region contains a bounding box, a type label, and a text field.
+
+This setting has three main challenges. First, the page layout is not fixed. Some images are clean scans, while others are phone photos of notebooks or homework. Second, the class distribution is imbalanced. Handwritten regions dominate the dataset, while tables, images, and graphs are much rarer. Third, different region types require different recognition behavior. Long handwritten lines, short teacher annotations, mathematical formulas, and tables should not be decoded in the same way.
+
+Therefore, a single OCR model may be less suitable for all regions. A line recognizer is useful for handwriting and printed text, but it is not designed to produce structured table rows or formula notation. A large vision-language model (VLM) may better follow structured output instructions for formulas and tables, but it can also normalize or infer content if the prompt is not constrained. We address this by using a type-aware hybrid pipeline. The detector predicts both bounding boxes and region types. A rule-based router then sends each region to the branch that matches its type.
+
+Our system, BoustoDoc, has three main components. First, we fine-tune DocLayout-YOLO~\cite{zhao2024doclayoutyolo} to detect seven RUKOPYS region types. Second, we adapt a Cyrillic Transformer-based OCR (TrOCR) model~\cite{li2023trocr} for handwritten, printed, and annotation regions using a silver-to-gold curriculum and type-specific decoding settings. Third, we use a Qwen3-VL branch~\cite{qwen3vltechnicalreport} with a low-rank adaptation (LoRA) adapter~\cite{hu2022lora} for formula and table regions, where structured transcription is needed.
+
+The contributions of this work are:
+\begin{itemize}
+  \item We formulate RUKOPYS mixed-region document understanding as a type-aware routing problem under low-resource supervision.
+  \item We build an offline hybrid pipeline that combines layout detection, HPA OCR, structured formula/table recognition, and schema-valid output assembly.
+  \item We provide controlled internal experiments and ablations showing when type-aware specialization is useful and where the remaining errors occur.
+\end{itemize}
+
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Document Layout Analysis}
+Document layout analysis aims to locate and classify visual regions on a page. Recent datasets and models have improved this task for printed and digital documents. DocLayNet~\cite{pfitzmann2022doclaynet} provides a large human-annotated benchmark for document layout analysis. Document Image Transformer (DiT)~\cite{li2022dit}, LayoutLMv3~\cite{huang2022layoutlmv3}, and Vision Grid Transformer (VGT)~\cite{da2023vgt} show that document-specific visual pretraining improves layout understanding. More recent one-stage detectors such as DocLayout-YOLO~\cite{zhao2024doclayoutyolo} and PP-DocLayout~\cite{sun2025ppdoclayout} provide efficient layout detection for practical document pipelines.
+
+RUKOPYS \cite{rukopys_2026} differs from common printed-layout benchmarks. Its regions are often handwritten line-level boxes, and its pages come from different sources such as nation dictation, state archive, university and school homework. Rare classes such as tables, images, and graphs are also important because they affect routing and output format. Therefore, we fine-tune DocLayout-YOLO for the seven RUKOPYS classes and use class-aware augmentation to reduce the effect of class imbalance.
+
+\subsection{Historical Handwritten Text Recognition}
+Handwritten text recognition (HTR) has benefited from encoder-decoder models such as TrOCR~\cite{li2023trocr}, which combine a visual encoder with a text decoder. These models are effective when the input is already cropped to a text line or region. Historical HTR remains difficult because handwriting style, orthography, image quality, and document format can vary strongly across time and source.
+
+For Cyrillic and related low-resource HTR settings, prior work includes Kazakh offline handwriting recognition~\cite{toiganbayeva2022kohtd}, Cyrillic OCR~\cite{liepieshov2019cyrillic}, and Ukrainian manuscript recognition~\cite{tikhonov2024ukrainian}. These systems mainly focus on text recognition after region boundaries are known. In RUKOPYS, the system must also detect the regions and handle several non-standard content types. Our HPA branch follows this line-level recognition approach, but applies it only to handwritten, printed, and annotation regions.
+
+\subsection{Vision-Language Models for Document Understanding}
+Vision-language models (VLMs) can read visual content and produce structured text outputs. Donut~\cite{kim2022donut} showed that OCR-free document models can solve document understanding tasks without an external OCR engine. Nougat~\cite{blecher2023nougat} showed that encoder-decoder models can recover structured academic document content such as formulas and tables. More recent models such as mPLUG-DocOwl~\cite{ye2023docowl}, UReader~\cite{ye2023ureader}, the Qwen-VL family~\cite{bai2023qwenvl, qwen3vltechnicalreport}, and PaddleOCR-VL~\cite{zhang2026paddleocrvl16} further improve multilingual and structured document understanding.
+
+Full-page VLM parsing can be risky for this benchmark, because exact transcription penalizes normalization, explanation, and hallucinated completion. The model may normalize spelling, add explanations, complete missing text, or solve formulas instead of transcribing them. These behaviors can hurt exact transcription. We use Qwen3-VL \cite{qwen3vltechnicalreport} only for formula and table crops in the final pipeline. The prompts are source-aware and type-specific, and they explicitly forbid explanation, normalization, and hallucinated completion.
+
+\subsection{Curriculum Learning and Parameter-Efficient Adaptation}
+Curriculum learning~\cite{bengio2009curriculum} trains a model through ordered stages. In OCR, a common strategy is to warm up on larger noisy or synthetic data and then fine-tune on smaller high-quality annotations. This is useful when gold labels are limited but additional pseudo-labeled data is available.
+
+Low-rank adaptation (LoRA)~\cite{hu2022lora} is a parameter-efficient fine-tuning method that adapts large models by training low-rank adapter weights instead of updating all model parameters. This is useful for vision-language models, where full fine-tuning is expensive. In our system, the TrOCR branch uses a silver-to-gold curriculum, while the Qwen3-VL branch uses LoRA adaptation. These choices keep the training process practical under limited data and compute.
+
+Overall, prior work provides strong components for layout detection, HTR, and document VLM parsing. In contrast, RUKOPYS requires these components to be combined under exact region-level transcription constraints, where routing by region type becomes important.
+
+\section{Methodology}
+\label{sec:method}
+
+\subsection{System Overview}
+\label{sec:overview}
+
+The proposed system receives a document page and outputs a list of regions. Each region contains a bounding box, a type label, and a text field. \Cref{fig:pipeline} shows the inference pipeline.
+
+The pipeline follows a type-aware routing design. First, DocLayout-YOLO predicts candidate regions and their seven-way region types. Second, predictions from two detector checkpoints are merged and filtered by non-maximum suppression (NMS). Third, each region is routed according to its predicted type. Handwritten, printed, and annotation regions are sent to the HPA OCR branch. Formula and table regions are sent to the Qwen3-VL branch. Image and graph regions are kept with empty text. Finally, all regions are assembled into a schema-valid CSV submission.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=1.0\linewidth]{figures/inference_pipeline.pdf}
+  \caption{Inference pipeline overview. Detected regions are post-processed and routed by type. HPA regions go to TrOCR, formula and table regions go to Qwen3-VL, and image or graph regions receive empty text.}
+  \label{fig:pipeline}
+\end{figure}
+
+\subsection{Region Detection}
+\label{sec:detection}
+
+Region detection is handled by DocLayout-YOLO~\cite{zhao2024doclayoutyolo}, initialized from a DocStructBench pretrained checkpoint and fine-tuned on the seven RUKOPYS region classes: handwritten, printed, formula, table, annotation, image, and graph. The detector predicts both the bounding box and the region type, so its output directly defines the routing decision for the later OCR branches.
+
+The detector training data is prepared from gold annotations and rare-class auxiliary samples. Bounding boxes are converted from COCO-style coordinates to the normalized YOLO format. To reduce the dominance of handwritten regions, we use class-aware augmentation that gives higher priority to rare or structurally important classes such as table, image, graph, and annotation. This augmentation is used as rebalancing rather than only generic data expansion.
+
+At inference time, two detector checkpoints are ensembled. Candidate boxes are generated with a low confidence threshold to preserve recall, then merged with class-agnostic NMS. The remaining regions are clamped to image boundaries, deduplicated, sorted in reading order, and passed to the router.
+
+\subsection{HPA OCR Branch}
+\label{sec:hpa}
+
+The HPA branch processes handwritten, printed, and annotation regions. It is based on the TrOCR architecture~\cite{li2023trocr} and initialized from a pretrained Cyrillic handwriting checkpoint~\cite{cyrillic_htr_model_2025}. Because RUKOPYS contains Ukrainian text, the tokenizer is extended with Ukrainian-specific Cyrillic characters before fine-tuning.
+
+Training follows a silver-to-gold curriculum. The model is first warmed up on auxiliary silver HPA crops, then fine-tuned on gold crops, and finally stabilized with a low-learning-rate gold recovery stage. Checkpoint selection uses a fixed gold validation split and the lowest validation character error rate (CER).
+
+At inference time, each HPA crop is decoded independently. We use type-specific decoding budgets: handwritten regions allow longer outputs, printed regions use a moderate budget, and annotation regions use a short budget to reduce over-generation on small teacher marks or labels.
+
+\subsection{Formula and Table OCR Branch}
+\label{sec:qwen}
+
+Formula and table regions are routed to Qwen3-VL-8B-Instruct~\cite{qwen3vltechnicalreport} with a LoRA adapter~\cite{hu2022lora}. This branch is used only for structured crop transcription in the final pipeline. The detector still provides the boxes and region types.
+
+We route formulas and tables away from TrOCR because their targets are not ordinary text-line transcriptions. Formulas require symbolic structure, indices, operators, and mathematical or chemical notation. Tables require row and cell structure. A line-level HTR decoder may flatten these structures, while a VLM is more suitable for following structured output instructions on these crops.
+
+The Qwen adapter is trained with hybrid instruction data that includes page-level extraction and crop-level OCR supervision. During final inference, the model is called only on formula and table crops. The prompts are type-specific and source-aware: formulas are transcribed as visible mathematical or chemical expressions, while tables are returned as pipe-separated rows. Guardrails are used to discourage explanations, normalization, solved formulas, hallucinated cells, and JSON or Markdown wrappers.
+
+\subsection{Post-Processing and Output}
+\label{sec:postprocessing}
+
+After recognition, the system assembles the final region list. Each region contains only three fields: \texttt{bbox}, \texttt{type}, and \texttt{text}. Region types are normalized to the seven valid labels. Image and graph regions are preserved but assigned empty text.
+
+The output for each page is serialized as a JSON list inside one CSV row with two columns: \texttt{image} and \texttt{regions}. Before writing the final file, the pipeline validates the row count, region keys, bounding-box format, and type labels.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Dataset and Evaluation Metrics}
+\label{sec:dataset}
+
+Experiments are conducted on the RUKOPYS dataset~\cite{rukopys_2026}, a Ukrainian handwritten document understanding benchmark with region detection, region-type classification, and text transcription. The dataset contains mixed sources, including nation dictation, state archive, university and school homework. These sources include handwritten text, printed text, formulas, tables, annotations, images, and graphs.
+
+The official test annotations are hidden. Therefore, for controlled evaluation, we split the human-annotated gold training set into internal train, validation, and test splits at the page level. Regions from the same page are never split across different subsets. We use a $70/15/15$ split with source-stratified shuffling. We use the internal train split for supervised gold training. We use the validation split for checkpoint selection and hyperparameter tuning. We report final metrics on the internal test split. The silver set is included only as auxiliary noisy training data. It is used for module-specific training stages, such as OCR warm-up and rare-class detector augmentation, but it is not used for checkpoint selection or final metric reporting. All final internal results are computed on the held-out gold internal test split. \Cref{tab:dataset-splits} summarizes the resulting data partitions and their role in the experiments.
+
+\begin{table}[tb]
+  \caption{Data used for training and evaluation. The gold set is split at the page level for internal evaluation, while the silver set is used only as auxiliary noisy training data.}
+  \label{tab:dataset-splits}
+  \centering
+  \begingroup
+  \footnotesize
+  \setlength{\tabcolsep}{8pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}llrr>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    Data & Split & Pages & Regions & Usage \\
+    \midrule
+    Gold & Train & 931 & 18,007 & Model training \\
+    Gold & Validation & 199 & 3,823 & Checkpoint selection and tuning \\
+    Gold & Internal test & 200 & 3,821 & Final internal evaluation \\
+    Silver & Auxiliary train & 8,207 & 161,065 & Noisy warm-up \\
+    Kaggle & Public test & 385 & Hidden & External leaderboard evaluation \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table}
+
+We report the official composite score used in the Handwritten to Data competition \cite{handwritten-to-data} for the RUKOPYS dataset as the main end-to-end metric. It combines type-agnostic detection F1 score (Det-F1) at intersection over union (IoU) $\geq 0.5$, region-type classification accuracy (ClassAcc) on matched regions, region-level character error rate (Region CER), and page-level character error rate (Page CER). The score is computed as:
+\[
+S = 0.15\,\mathrm{DetF1}
+  + 0.05\,\mathrm{ClassAcc}
+  + 0.30(1-\mathrm{RegionCER})
+  + 0.50(1-\mathrm{PageCER}).
+\]
+Before CER computation, both predictions and ground truth are normalized using the official text-normalization rules. We also report module-level metrics such as detector mean average precision (mAP), crop-level CER, and word error rate (WER) for diagnostic analysis. For completeness, we include the official text-normalization notebook in the supplementary package.
+
+\subsection{Implementation Details}
+\label{sec:implementation}
+
+\Cref{fig:training} summarizes the training workflow for the detector, HPA OCR branch, and Qwen3-VL structured-recognition branch.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=1.0\linewidth]{figures/module_pipeline.pdf}
+  \caption{Training overview for the three modules: DocLayout-YOLO detector fine-tuning, TrOCR HPA curriculum learning, and Qwen3-VL LoRA adaptation for formula/table OCR.}
+  \label{fig:training}
+\end{figure}
+
+The detector is initialized from the DocLayout-YOLO DocStructBench checkpoint and fine-tuned for the seven RUKOPYS region classes. We use batch size 8, image size 1024, Adam optimization, initial learning rate 0.001, weight decay 0.0005, momentum 0.9, two warm-up epochs, and early stopping patience 10. Detector training uses COCO-to-\texttt{xywh} bounding-box conversion, bounding-box validation, and class-aware augmentation. V4.1 uses mosaic 0.1 and stops after 40 epochs, while V4.2 uses mosaic 0.25 and stops after 68 epochs.
+
+The HPA branch handles handwritten, printed, and annotation regions. It is initialized from a Cyrillic HTR checkpoint and fine-tuned with a three-stage curriculum: silver warm-up, gold fine-tuning, and low-learning-rate gold recovery. The learning rates are $3\times10^{-5}$, $10^{-5}$, and $5\times10^{-6}$. We adapt the tokenizer with Ukrainian-specific characters and use type-specific decoding budgets at validation and inference time.
+
+The Qwen branch handles only formula and table regions after detection and routing. It uses Qwen3-VL-8B-Instruct with LoRA adaptation and 4-bit NF4 quantized inference. Prompts are type-aware and source-aware: formula crops are requested as exact mathematical or chemical expressions, while table crops are requested as pipe-separated rows.
+
+At inference time, the final detector uses a $V4.1+V4.2$ checkpoint ensemble. Candidate boxes are generated with confidence 0.001, image size 1024, and at most 300 detections per image. Predictions are merged with class-agnostic non-maximum suppression at IoU 0.55, deduplicated, sorted top-to-bottom and left-to-right, and serialized to \texttt{submission.csv}. Each output region contains only \texttt{bbox}, \texttt{type}, and \texttt{text}. Regions of type \texttt{image} and \texttt{graph} are kept with empty text.
+
+Further implementation details are provided in the supplementary material, including training configurations, prompt templates, inference settings, and output validation checks.
+
+\subsection{Main Results}
+\label{sec:main-results}
+
+We report results under four evaluation settings. First, the end-to-end internal test evaluates the complete pipeline on the held-out gold pages and is used as the main result. Second, detector-only metrics are computed on the internal detector test split with COCOeval. Third, typed OCR validation evaluates recognizers on gold crops and isolates OCR errors from detector errors. Fourth, the gold-layout routing ablation uses gold boxes and gold region types to isolate the routing policy.
+
+\Cref{tab:full-system-results} reports end-to-end results on the held-out gold internal test split under the fixed internal protocol. These metrics evaluate the full pipeline. They include localization, region typing, region-level transcription, page-level transcription, and the composite score.
+
+\begin{table*}[tb]
+  \caption{End-to-end gold internal test results under the fixed internal protocol. Higher is better for Det-F1, ClassAcc, and Official Score; lower is better for CER metrics.}
+  \label{tab:full-system-results}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Yccccc@{}}
+    \toprule
+    System & \metrichead{Det-F1} & \metrichead{ClassAcc} & \metrichead{Region CER} & \metrichead{Page CER} & \metrichead{Official Score} \\
+    \midrule
+    Detector only, empty text & 0.9221 & 0.9766 & 1.0000 & 0.9628	 & 0.2057 \\
+    DocLayout-YOLO + TrOCR for all text-like regions & 0.9221 & 0.9766 & 0.1251	 & 0.1985 & 0.8504 \\
+    DocLayout-YOLO + Qwen3-VL for all text-like regions & 0.9221 & 0.9766 & 0.1347 & 0.2149 & 0.8393 \\
+    DocLayout-YOLO + TrOCR HPA, empty formula/table & 0.9221 & 0.9766 & 0.2050 & 0.2771 & 0.7871 \\
+    DocLayout-YOLO + Qwen formula/table, empty HPA & 0.9221 & 0.9766 & 0.9011 & 0.8439 & 0.2948 \\
+    \textbf{Ours: DocLayout-YOLO + TrOCR + Qwen routing} & \textbf{0.9221} & \textbf{0.9766} & \textbf{0.1061} & \textbf{0.1876	} & \textbf{0.8615} \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{2pt}
+  \tablenote{All rows use the same detector outputs; differences in Region CER, Page CER, and Official Score come from OCR and routing choices.}
+  \endgroup
+\end{table*}
+
+\Cref{tab:module-results} summarizes the module-level measurements currently available. The final detector ensemble reaches 0.7022 mAP@50 and 0.4424 mAP@50:95 under official COCO evaluation (COCOeval) on the 200-page held-out internal detector test split. The HPA OCR branch achieves 0.0954 overall CER on typed validation, with 0.0899 CER on handwritten regions. The printed and annotation subsets are much smaller, so their numbers should be interpreted with caution. In particular, annotation remains the most difficult HPA type because it often contains short, irregular teacher marks and labels.
+
+
+
+\subsection{Per-Type and Per-Source Analysis}
+\label{sec:per-type-source}
+
+Because RUKOPYS is a mixed-region and multi-source benchmark, aggregate results can hide failure modes. We therefore report performance by region type in \Cref{tab:per-type-results} and by document source in \Cref{tab:per-source-results}. The per-type analysis is diagnostic: it shows how errors vary across common HPA regions and rare structured or non-text regions. The per-source analysis shows how performance changes across dictation, archive, university, and school documents.
+
+\begin{table*}[tb]
+  \caption{Available module-level results. Detector results are official COCOeval bounding-box metrics on the held-out internal detector test split; OCR results are crop-level typed validation diagnostics. Higher is better for mAP, average precision (AP), average recall (AR), and Exact Match; lower is better for CER and WER.}
+  \label{tab:module-results}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{5pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}YYccr@{}}
+    \toprule
+    Component & Split / Group & Metric & $N$ & Value \\
+    \midrule
+    DocLayout-YOLO ensemble & detector test & mAP@50 & 200 / 3,821 & 0.7022 \\
+    DocLayout-YOLO ensemble & detector test & mAP@50:95 & 200 / 3,821 & 0.4424 \\
+    DocLayout-YOLO ensemble & detector test & AP@75 & 200 / 3,821 & 0.4471 \\
+    DocLayout-YOLO ensemble & detector test & AR@100 & 200 / 3,821 & 0.5877 \\
+    TrOCR HPA & overall & CER & 2,222 & 0.0954 \\
+    TrOCR HPA & overall & WER & 2,222 & 0.2913 \\
+    TrOCR HPA & overall & Exact Match & 2,222 & 0.4043 \\
+    TrOCR HPA & handwritten & CER & 2,147 & 0.0899 \\
+    TrOCR HPA & printed & CER & 28 & 0.2121 \\
+    TrOCR HPA & annotation & CER & 47 & 0.2637 \\
+    Qwen3-VL & formula & CER & 449 & 0.2019 \\
+    Qwen3-VL & table & CER & 12 & 0.2359 \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+
+
+\begin{table*}[tb]
+  \caption{Per-region-type results for the full system. AP values are detector diagnostics from the final ensemble, while counts, Det-F1, ClassAcc, and CER are computed from the final submission under the official matching protocol. Higher is better for AP, Det-F1, and ClassAcc; lower is better for CER.}
+  \label{tab:per-type-results}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}lcccccccY@{}}
+    \toprule
+    Type & \metrichead{GT} & \metrichead{Pred} & \metrichead{AP@50} & \metrichead{AP@50:95} & \metrichead{Det-F1} & \metrichead{ClassAcc} & \metrichead{CER} & Main failure mode \\
+    \midrule
+    handwritten & 3,149 & 3,240 & 0.9415 & 0.5977 & 0.9408 & 0.9873 & 0.0852 & Dense-line duplicate boxes; formula confusion \\
+    printed & 68 & 48 & 0.6069 & 0.3599 & 0.7438 & 0.8889 & 0.0345 & Printed $\rightarrow$ handwritten confusion \\
+    formula & 495 & 557 & 0.8417 & 0.5467 & 0.8953 & 0.9528 & 0.2397 & Formula/handwritten confusion \\
+    table & 13 & 36 & 0.7424 & 0.5959 & 0.5333 & 1.0000 & 0.1786 & Rare class with many proposals \\
+    annotation & 77 & 64 & 0.4541 & 0.2446 & 0.6839 & 0.6792 & 0.2630 & Missed small annotations; false positives \\
+    image & 12 & 17 & 0.4771 & 0.4196 & 0.4138 & 0.8333 & -- & Rare class with many proposals \\
+    graph & 7 & 8 & 0.8515 & 0.3324 & 0.8750 & 0.8571 & -- & Rare class with many proposals \\
+    \bottomrule
+  \end{tabularx}
+  \tablenote{GT denotes ground-truth regions; Pred denotes predicted regions.}
+  \endgroup
+\end{table*}
+
+\begin{table*}[tb]
+  \caption{Per-source internal test results for the full system. RUKOPYS contains noticeable source variation across dictation, archive, university, and school documents.}
+  \label{tab:per-source-results}
+  \centering
+  \begingroup
+  \footnotesize
+  \setlength{\tabcolsep}{8pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Yccccc@{}}
+    \toprule
+    Source & Pages & \metrichead{Det-F1} & \metrichead{ClassAcc} & \metrichead{Region CER} & \metrichead{Page CER} \\
+    \midrule
+    dictation & 54 & 0.9643 & 0.9952 & 0.0567 & 0.0520 \\
+    archive & 19 & 0.9511 & 0.9815 & 0.1139 & 0.1539 \\
+    university & 25 & 0.8904 & 0.9380 & 0.2108 & 0.3459 \\
+    school & 102 & 0.8923 & 0.9733 & 0.1110 & 0.2269 \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+
+
+The rare-class results in Table~\ref{tab:per-type-results} should be interpreted cautiously. The internal test split contains only 13 table regions, 12 image regions, and 7 graph regions. Therefore, the corresponding AP, Det-F1, and ClassAcc values are useful mainly for diagnosing failure modes, not for making strong claims about robust rare-class performance.
+
+\subsection{Qualitative Results}
+\label{sec:qualitative}
+
+Additional qualitative results are provided in the supplementary material. They include full-page outputs and crop-level examples covering successful cases, near-correct predictions, and representative failures. These examples illustrate the detector--router--OCR workflow and make common error modes more concrete, including formula--handwriting confusion, annotation/image confusion, malformed table serialization, and type-dependent routing errors.
+
+\subsection{Ablation Study}
+\label{sec:ablation}
+
+We use ablations to isolate the role of each major component: detector ensembling, HPA OCR training, Qwen prompt design, and final type-aware routing. All comparisons are measured under fixed evaluation settings. The routing ablation is treated as an important diagnostic test for the proposed hybrid design.
+
+\subsubsection{Detector Ablations}
+
+\Cref{tab:detector-ablation} compares the two detector checkpoints and their ensemble. V4.2 is stronger than V4.1 as a single model, while the $V4.1+V4.2$ ensemble gives the best AP, Det-F1, and detector-only official score. 
+This suggests that the two checkpoints retain complementary detections.
+
+\begin{table*}[tb]
+  \caption{Detector ablation on the 200-page held-out internal detector test split. AP values are official COCOeval diagnostics, while Det-F1 and official score are computed by the official matching protocol at confidence threshold 0.20. Higher values are better for all reported metrics.}
+  \label{tab:detector-ablation}
+  \centering
+  \begingroup
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Ycccc@{}}
+    \toprule
+    Detector & \metrichead{mAP@50} & \metrichead{mAP@50:95} & \metrichead{Det-F1} & \metrichead{Official Score} \\
+    \midrule
+    V4.1 only (confidence 0.20) & 0.6163 & 0.3918 & 0.9153 & 0.2037 \\
+    V4.2 only (confidence 0.20) & 0.6961 & 0.4337 & 0.9214 & 0.2050 \\
+    V4.1 + V4.2 ensemble (confidence 0.20) & \textbf{0.7022} & \textbf{0.4424} & \textbf{0.9221} & \textbf{0.2057} \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+\subsubsection{OCR Ablations}
+
+\Cref{tab:hpa-ablation} details the ablation results for the HPA OCR branch. The zero-shot baseline yields an overall CER of 0.6645, confirming a large domain gap. Gold-only fine-tuning reduces the overall CER to 0.1314. However, the printed text CER remains high at 0.4690 due to limited training samples. Introducing a two-stage silver-to-gold setup lowers the overall CER to 0.1081 and cuts the printed CER to 0.2174. The full three-phase curriculum with uniform decoding further decreases the overall CER to 0.1005. This progression suggests that silver data can provide useful warm-up supervision for low-resource categories in this setting. Finally, type-specific decoding gives the lowest overall CER of 0.0954 and the highest exact-match rate of 0.4043. The improvement is mainly driven by handwritten regions, which dominate the HPA validation set. Printed and annotation CER do not improve over uniform decoding, so this setting should be viewed as an overall trade-off rather than a per-type improvement. This ablation is evaluated on gold HPA regions, so it isolates the HPA OCR branch from detector errors.
+
+\begin{table*}[t]
+  \caption{HPA OCR ablation on handwritten, printed, and annotation crops. HW denotes handwritten and Ann. denotes annotation. Lower is better for CER and WER; higher is better for Exact Match.}
+  \label{tab:hpa-ablation}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{2.5pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Ycccccc@{}}
+    \toprule
+    HPA setting & \metrichead{Overall CER} & \metrichead{HW CER} & \metrichead{Printed CER} & \metrichead{Ann. CER} & \metrichead{WER} & \metrichead{Exact} \\
+    \midrule
+    Base Cyrillic HTR, zero-shot & 0.6645 & 0.6680 & 0.6694 & 0.4865 & 1.0423 & 0.0089 \\
+    Gold-only fine-tuning & 0.1314 & 0.1227 & 0.4690 & 0.2631 & 0.3773 & 0.3032 \\
+    Silver warm-up only & 0.2095 & 0.2059 & 0.3459 & 0.2659 & 0.4604 & 0.2584 \\
+    Silver $\rightarrow$ gold & 0.1081 & 0.1023 & 0.2174 & 0.2963 & 0.3306 & 0.3957 \\
+    Full curriculum, uniform decoding & 0.1005 & 0.0953 & 0.2095 & 0.2586 & 0.3017 & 0.3982 \\
+    Full curriculum, type-specific decoding (final pipeline) & 0.0954 & 0.0899 & 0.2121 & 0.2637 & 0.2913 & 0.4043 \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+\Cref{tab:qwen-ablation} studies the Qwen3-VL formula/table branch. Since formulas and tables have structured targets, we evaluate not only CER but also invalid-output rate. Invalid outputs include explanations, JSON/Markdown wrappers, hallucinated completions, solved formulas, or malformed table rows.
+
+This ablation is evaluated on gold formula and table regions, so it isolates the Qwen branch from detector errors. The official score in this table is therefore used only as a diagnostic score under the same parser and normalization rules, not as the final end-to-end system score. The main quantities of interest are formula CER, table CER, and invalid-output rate.
+
+\begin{table*}[tb]
+  \caption{Qwen3-VL formula/table ablation. Invalid-output rate measures whether the model follows the required output format. Lower is better for CER and Invalid Rate; higher is better for structural accuracy (Struct. Acc.) and Official Score.}
+  \label{tab:qwen-ablation}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Yccccc@{}}
+    \toprule
+    Qwen setting & \metrichead{Formula CER} & \metrichead{Table CER} & \metrichead{Struct. Acc.} & \metrichead{Invalid Rate} & \metrichead{Official Score} \\
+    \midrule
+    Base Qwen3-VL, zero-shot generic prompt & 0.4962 & 0.4213 & 0.9631 & 0.0369 & 0.2850 \\
+    LoRA, generic prompt & 0.2079 & 0.2763 & 0.9501 & 0.0499 & 0.3120 \\
+    LoRA, type-specific prompt & 0.1996 & 0.2339 & 0.9544 & 0.0456 & 0.3134 \\
+    LoRA, source-aware + type-specific prompt & 0.1973 & 0.2383 & 0.9566 & 0.0434 & 0.3137 \\
+    LoRA, source-aware prompt + guardrails & 0.2040 & 0.2770 & 0.9501 & 0.0499 & 0.3127 \\
+    LoRA, source-aware + type-specific prompt + guardrails & 0.2016 & 0.2359 & 0.9523 & 0.0477 & 0.3131 \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+The zero-shot Qwen3-VL baseline performs poorly on structured crops, with 0.4962 formula CER and 0.4213 table CER. In this ablation, LoRA adaptation gives the largest gain. With a generic prompt, it reduces formula CER to 0.2079 and table CER to 0.2763. Type-specific prompting further improves both structured categories, especially tables, where CER drops to 0.2339. Adding source hints gives the best formula CER of 0.1973 and the highest structural accuracy of 0.9566, suggesting that weak document context can help constrain transcription without changing the output schema. Guardrails did not consistently improve CER or invalid-output rate. We keep them as a conservative decoding choice, but the ablation shows that prompt constraints must be tuned carefully. Overall, the source-aware and type-specific prompt performs well, while guardrails introduce a trade-off between stricter formatting and possible omission of uncertain content.
+
+\subsubsection{Routing Ablations}
+
+\Cref{tab:routing-ablation} evaluates the final design choice: using specialized OCR branches by region type. This is the key ablation for the paper because the proposed system is not a single new architecture, but a type-aware hybrid pipeline. This ablation tests whether routing HPA regions to TrOCR and formula/table regions to Qwen3-VL improves recognition when layout annotations are fixed.
+
+For this routing ablation, we use gold bounding boxes and gold region types. This oracle-layout ablation isolates the recognition and routing policy. It complements, but does not replace, the end-to-end comparison in \Cref{tab:full-system-results}.
+
+\begin{table*}[tb]
+  \caption{Routing ablation for the final hybrid pipeline. Higher is better for Det-F1, ClassAcc, and Official Score; lower is better for CER metrics.}
+  \label{tab:routing-ablation}
+  \centering
+  \begingroup
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}Yccc@{}}
+    \toprule
+    Routing strategy & \metrichead{Region CER} & \metrichead{Page CER} & \metrichead{Official Score} \\
+    \midrule
+    TrOCR for all text-like regions & 0.1296 & 0.1324 & 0.8949 \\
+    Qwen3-VL for all text-like regions & 0.1382 & 0.1362 & 0.8904 \\
+    TrOCR for HPA, empty formula/table & 0.2079 & 0.2308 & 0.8222 \\
+    Qwen for formula/table, empty HPA & 0.9011 & 0.8332 & 0.3131 \\
+    \textbf{Hybrid routing: TrOCR HPA + Qwen formula/table} & \textbf{0.1090} & \textbf{0.1043} & \textbf{0.9152} \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+Under this gold-layout ablation, specialization by region type is beneficial. TrOCR applied to all text-like regions reaches a strong score of 0.8949, but it is weaker on structured formula and table content. Qwen3-VL applied to all text-like regions obtains a comparable but slightly lower score of 0.8904, indicating that a VLM can read many crops but is not optimal for ordinary HPA text. The two partial systems support the complementarity of the branches. Removing formula/table transcription lowers the score to 0.8222. Keeping only Qwen formula/table outputs lowers the score to 0.3131 because HPA regions dominate the benchmark. The hybrid routing strategy achieves the best result, with 0.1090 region CER, 0.1043 page CER, and 0.9152 official score. This supports the main design choice of routing HPA regions to TrOCR and structured regions to Qwen3-VL instead of forcing a single recognizer to handle all region types.
+
+\subsection{Error Analysis}
+\label{sec:error-analysis}
+
+Finally, we analyze representative failure cases. Detector failures are grouped into missed small annotations, duplicate/background proposals, formula/handwritten confusion, and printed/handwritten confusion. Hungarian matching at IoU 0.5 shows that the detector errors are not limited to missed boxes. The ensemble produces 9,043 background false positives in the low-threshold candidate output used for AP-style ranking. Among semantic confusions, formula and handwriting are the most important failure pair, with 20 formula boxes predicted as handwritten and 33 handwritten boxes predicted as formula. Printed-to-handwritten confusion appears 5 times, while handwritten-to-printed confusion is absent in this analysis. Small annotations remain fragile, with 24 missed annotation boxes. We group HPA OCR failures into short annotation errors, Ukrainian character substitutions, punctuation errors, and over-generation. We group formula/table failures into malformed LaTeX, solved or normalized formulas, missing table separators, hallucinated cells, and row-order mistakes.
+
+For the Qwen branch, the main failures are format-related rather than pure character substitutions. Formula errors often occur when the model normalizes notation, simplifies an expression, or produces a solved result instead of copying the visible formula. Table errors are usually caused by missing pipe separators, inconsistent row structure, or hallucinated cells when the crop is sparse or partially occluded. These errors motivate the use of type-specific prompts and output guardrails, but the ablation results also show that prompt constraints must be balanced against the risk of suppressing uncertain visible content. \Cref{tab:error-taxonomy} summarizes the main failure categories observed across the detector, OCR branches, and full pipeline.
+
+\begin{table*}[tb]
+  \caption{Qualitative error taxonomy for the final hybrid pipeline.}
+  \label{tab:error-taxonomy}
+  \centering
+  \begingroup
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \renewcommand{\arraystretch}{1.05}
+  \begin{tabularx}{\linewidth}{@{}lYY@{}}
+    \toprule
+    Module & Error type & Example / Observation \\
+    \midrule
+    Detector & Missed small annotation & 6 missed annotation boxes under Hungarian matching at IoU 0.5. \\
+    Detector & Duplicate/background proposals & 9,043 background false positives in the low-threshold AP candidate output. \\
+    Detector & Formula vs handwritten confusion & 24 formula $\rightarrow$ handwritten and 38 handwritten $\rightarrow$ formula confusions. \\
+    Detector & Printed vs handwritten confusion & 9 printed $\rightarrow$ handwritten and 0 handwritten $\rightarrow$ printed confusions. \\
+    TrOCR HPA & Ukrainian character substitution & Visually similar Cyrillic characters and diacritics remain fragile on low-contrast handwriting. \\
+    TrOCR HPA & Annotation over-generation & Short marks can be expanded into longer words when the crop contains little textual context. \\
+    Qwen3-VL & Formula normalization or solving & The model may rewrite notation or infer a result instead of copying visible symbols exactly. \\
+    Qwen3-VL & Malformed table separators & Sparse crops can produce missing pipe separators or inconsistent row lengths. \\
+    Full system & Reading-order/page-CER error & Residual duplicate boxes and local ordering mistakes can increase page-level CER. \\
+    \bottomrule
+  \end{tabularx}
+  \endgroup
+\end{table*}
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a type-aware hybrid pipeline for low-resource Ukrainian handwritten document understanding on RUKOPYS. The system combines DocLayout-YOLO for region detection and type prediction, Cyrillic TrOCR for handwritten, printed, and annotation regions, and Qwen3-VL with LoRA adaptation for formula and table regions. This design treats mixed-region recognition as a routing problem: each detected region is sent to a recognizer that better matches its type, while image and graph regions keep empty text.
+
+Under our internal protocol, the final pipeline reaches an official-style score of 0.8615. In a gold-layout routing ablation, hybrid routing improves over TrOCR-only and Qwen-only recognition for text-like regions. These results provide evidence that type-aware specialization is useful for this dataset. Remaining errors include missed small annotations, formula--handwriting confusion, annotation over-generation, malformed formula outputs, table formatting errors, and page-level ordering issues. Future work should improve rare-class detection, constrained structured decoding, and evaluation on additional Cyrillic document collections.
+
+% ---- Bibliography ----
+\bibliographystyle{splncs04}
+\bibliography{main}
+\end{document}
