@@ -1,0 +1,1 @@
+<https://www.kaggle.com/datasets/quii29/rukopys-scanned-dataset>

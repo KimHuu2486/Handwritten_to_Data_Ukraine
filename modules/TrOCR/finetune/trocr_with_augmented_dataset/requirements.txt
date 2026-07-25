@@ -1,0 +1,11 @@
+torch
+torchvision
+transformers
+Pillow
+jiwer
+tqdm
+python-dotenv
+tokenizers>=0.19.1,<0.20
+safetensors>=0.4.3
+huggingface-hub>=0.23.0
+accelerate>=0.31.0
