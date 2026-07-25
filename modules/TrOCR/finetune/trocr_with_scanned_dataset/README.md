@@ -1,29 +1,64 @@
 # TrOCR Single-Phase Fine-Tuning with Scanned Dataset
 
-Thư mục này chứa toàn bộ mã nguồn, kịch bản cắt ảnh dòng và kịch bản huấn luyện tinh chỉnh đơn tầng (Single-phase Fine-tuning) mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) cho bài toán nhận diện chữ viết tay tiếng Ukraine trên tập dữ liệu trang quét: **[rukopys-scanned-dataset](https://www.kaggle.com/datasets/quii29/rukopys-scanned-dataset)**.
+Pipeline này thực hiện cắt ảnh dòng (Line cropping) từ tập dữ liệu trang quét gốc và huấn luyện tinh chỉnh đơn tầng (Single-phase Fine-tuning) mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) trên tập dữ liệu: **[rukopys-scanned-dataset](https://www.kaggle.com/datasets/quii29/rukopys-scanned-dataset)**.
 
----
+## Luồng chính
 
-## Cấu trúc thư mục
+```text
+Trang ảnh quét gốc + metadata.jsonl (cấp trang)
+                         ↓
+  crop_dataset.py (Trích xuất crop dòng chữ theo bbox)
+                         ↓
+Tập dữ liệu ảnh dòng (dataset/train/metadata.jsonl & images/)
+                         ↓
+train_kansallisarkisto_hpa_single_train.py (Seq2SeqTrainer + EarlyStopping)
+                         ↓
+  Typed Evaluation & Checkpoint tối ưu (final_cyrillic_htr_model)
+```
 
-| File / Thư mục | Mô tả |
-| --- | --- |
-| [`crop_dataset.py`](./crop_dataset.py) | Python script đọc tệp `metadata.jsonl` cấp trang quét gốc và tiến hành trích xuất/cắt (crop) các vùng ảnh dòng chữ theo bounding box (`bbox`), tự động đóng gói cấu trúc thư mục đầu ra chuẩn cho script huấn luyện. |
-| [`train_kansallisarkisto_hpa_single_train.py`](./train_kansallisarkisto_hpa_single_train.py) | Python script chính thực hiện toàn bộ pipeline huấn luyện đơn tầng, tự động chia tập train/val phân tầng, lưu checkpoint có CER tốt nhất và đánh giá theo loại vùng (Typed Evaluation). |
-| [`run_train_kansallisarkisto_hpa_single_train_cloud.sh`](./run_train_kansallisarkisto_hpa_single_train_cloud.sh) | Script Bash tự động tạo môi trường ảo `venv`, nạp file cấu hình môi trường `.env` và kích hoạt quá trình huấn luyện trên máy chủ/Cloud. |
-| [`metadata.jsonl`](./metadata.jsonl) | Tệp nhãn mẫu gốc cấp trang quét chứa danh sách các vùng chọn (`regions`) kèm tọa độ `bbox`, loại vùng (`type`) và văn bản giải mã (`text`). |
-| [`requirements.txt`](./requirements.txt) | Danh sách các thư viện Python cần thiết (`torch`, `transformers`, `Pillow`, `jiwer`, `accelerate`, ...). |
-| [`dataset.md`](./dataset.md) | Liên kết tham chiếu tới tập dữ liệu trang quét gốc trên Kaggle ([rukopys-scanned-dataset](https://www.kaggle.com/datasets/quii29/rukopys-scanned-dataset)). |
-| [`README.md`](./README.md) | Tài liệu hướng dẫn chi tiết quy trình xử lý dữ liệu và chạy tiến trình. |
+## Thứ tự đọc
+
+1. [`crop_dataset.py`](./crop_dataset.py)
+2. [`train_kansallisarkisto_hpa_single_train.py`](./train_kansallisarkisto_hpa_single_train.py)
+3. [`run_train_kansallisarkisto_hpa_single_train_cloud.sh`](./run_train_kansallisarkisto_hpa_single_train_cloud.sh)
+4. [`requirements.txt`](./requirements.txt)
+5. [`dataset.md`](./dataset.md)
+
+## Vai trò từng file
+
+### `crop_dataset.py`
+
+Python script xử lý tiền dữ liệu. Script đọc `metadata.jsonl` cấp trang quét gốc, cắt các vùng chữ theo `bbox` (`handwritten`, `printed`, `annotation`) và đóng gói thành tập dữ liệu dòng chữ chuẩn cho script huấn luyện.
+
+### `train_kansallisarkisto_hpa_single_train.py`
+
+Python script chính huấn luyện tinh chỉnh TrOCR đơn tầng. Script tự động chia tập train/val phân tầng 90/10, mở rộng tokenizer cho tiếng Ukraine và lưu checkpoint có chỉ số CER tốt nhất thông qua HuggingFace Trainer.
+
+Đầu ra chính:
+```text
+OUTPUT_DIR/
+├── splits/                           # Các file split cố định (train_fixed_hpa.jsonl, val_fixed_hpa.jsonl)
+├── checkpoint-xxxx/                  # Checkpoints lưu theo epoch
+└── final_cyrillic_htr_model/         # Mô hình thành phẩm xuất cuối cùng
+```
+
+### `run_train_kansallisarkisto_hpa_single_train_cloud.sh`
+
+Script Bash Wrapper tự động khởi tạo môi trường ảo `venv`, nạp file môi trường `.env.hpa`, kiểm tra cấu trúc thư mục dữ liệu và khởi chạy tiến trình huấn luyện trên máy chủ/Cloud.
+
+### `requirements.txt`
+
+Khai báo các thư viện Python cần thiết (`torch`, `transformers`, `Pillow`, `jiwer`, `accelerate`, ...).
+
+### `dataset.md`
+
+Tài liệu tham chiếu liên kết nguồn dữ liệu trang quét gốc trên Kaggle.
 
 ---
 
 ## Quy trình Xử lý Dữ liệu & Cắt Ảnh Dòng (Line Cropping)
 
-### Đặt vấn đề & Yêu cầu đầu vào
-
-Tập dữ liệu trang quét gốc lưu giữ thông tin ở cấp độ nguyên trang ảnh kèm tệp `metadata.jsonl` biểu diễn các vùng chữ dưới dạng danh sách `regions`:
-
+Tập dữ liệu trang quét gốc chứa thông tin cấp trang ảnh:
 ```json
 {
   "file_name": "images/964a31fc-0bee-5096-9359-2371641869eb.jpg",
@@ -38,8 +73,6 @@ Tập dữ liệu trang quét gốc lưu giữ thông tin ở cấp độ nguyê
   ]
 }
 ```
-
-Mô hình TrOCR yêu cầu đầu vào là từng ảnh dòng chữ riêng biệt (Line crops) kèm thông tin nhãn văn bản. Kịch bản [`crop_dataset.py`](./crop_dataset.py) được xây dựng để thực hiện tự động công đoạn này.
 
 ### Lệnh thực hiện Cắt ảnh (Crop Command)
 
@@ -58,9 +91,8 @@ python crop_dataset.py \
 
 ### Cấu trúc dữ liệu sau khi cắt
 
-Sau khi chạy xong `crop_dataset.py`, thư mục dữ liệu đầu ra sẽ được tạo theo đúng quy chuẩn yêu cầu của script huấn luyện:
-
-```
+Sau khi cắt xong, thư mục đầu ra có dạng:
+```text
 dataset/
 └── train/
     ├── metadata.jsonl
@@ -70,20 +102,9 @@ dataset/
         └── ...
 ```
 
-Mỗi dòng trong `dataset/train/metadata.jsonl` mới có định dạng tinh gọn:
-```json
-{
-  "file_name": "images/964a31fc-0bee-5096-9359-2371641869eb_crop_1_handwritten.jpg",
-  "image": "images/964a31fc-0bee-5096-9359-2371641869eb_crop_1_handwritten.jpg",
-  "label": "handwritten",
-  "type": "handwritten",
-  "text": "Електростанції:"
-}
-```
-
 ---
 
-## Hướng dẫn Chạy Tiến Trình Huấn Luyện (Run Guide)
+## Hướng dẫn Chạy Huấn Luyện (Run Guide)
 
 ### Bước 1: Cài đặt thư viện phụ thuộc
 
@@ -91,11 +112,7 @@ Mỗi dòng trong `dataset/train/metadata.jsonl` mới có định dạng tinh g
 pip install -r requirements.txt
 ```
 
----
-
 ### Bước 2: Tạo File Môi Trường (`.env.hpa`)
-
-Tạo một file `.env.hpa` để thiết lập các đường dẫn và tham số huấn luyện:
 
 ```bash
 cat << 'EOF' > .env.hpa
@@ -119,15 +136,11 @@ PYTHON_BIN=python3
 EOF
 ```
 
----
-
 ### Bước 3: Kích hoạt Tiến trình Huấn Luyện
 
 Bạn có thể lựa chọn 1 trong 3 cách kích hoạt sau:
 
 #### Cách 1: Chạy qua Bash Script với file `.env.hpa` (Khuyến nghị)
-
-Bash script `run_train_kansallisarkisto_hpa_single_train_cloud.sh` sẽ tự động thiết lập virtualenv và kiểm tra cấu trúc dữ liệu trước khi chạy:
 
 ```bash
 # Gán quyền thực thi

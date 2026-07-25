@@ -1,17 +1,51 @@
-# TrOCR 3-Phase Fine-Tuning Pipeline for Ukraine OCR
+# TrOCR 3-Phase Fine-Tuning (Metric Evaluation)
 
-Thư mục này chứa toàn bộ mã nguồn và kịch bản huấn luyện tinh chỉnh (Fine-tuning) mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) qua **3 giai đoạn (3-Phase Strategy)** cho bài toán nhận diện chữ viết tay tiếng Ukraine, dựa trên tập dữ liệu đã phân tách theo tỷ lệ **70/15/15** trong thư mục [`data/`](../data/).
+Pipeline này thực hiện huấn luyện tinh chỉnh mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) qua **3 giai đoạn (3-Phase Strategy)** cho bài toán nhận diện chữ viết tay tiếng Ukraine, dựa trên tập dữ liệu đã phân tách theo tỷ lệ **70/15/15** trong thư mục [`data/`](../data/).
 
----
+## Luồng chính
 
-## Cấu trúc thư mục
+```text
+Dữ liệu trang quét (data/train.jsonl, val.jsonl, test.jsonl)
+                           ↓
+               Line crop dataset & metadata
+                           ↓
+     Phase 1 — Silver Warm-up (1.0 epoch, LR 3e-5)
+                           ↓
+      Phase 2 — Gold Fine-tune (6.0 epochs, LR 1e-5)
+                           ↓
+      Phase 3 — Gold Recovery (2.0 epochs, LR 5e-6)
+                           ↓
+Typed Decoding Evaluation & Final Metric Report (CER / WER)
+```
 
-| File / Thư mục | Mô tả |
-| --- | --- |
-| [`train_kansallisarkisto_hpa_3phase.py`](./train_kansallisarkisto_hpa_3phase.py) | Python script chính điều khiển quy trình huấn luyện 3 phase, tự động bổ sung ký tự tiếng Ukraine, đánh giá phân loại (Typed Eval) và lưu checkpoint tối ưu theo chỉ số CER. |
-| [`run_train_kansallisarkisto_hpa_cloud.sh`](./run_train_kansallisarkisto_hpa_cloud.sh) | Script Bash giúp nạp biến môi trường từ file `.env` và kích hoạt quá trình huấn luyện trên máy chủ/Cloud. |
-| [`requirements.txt`](./requirements.txt) | Danh sách các thư viện Python cần thiết (`torch`, `transformers`, `jiwer`, `accelerate`, ...). |
-| [`README.md`](./README.md) | Tài liệu hướng dẫn chi tiết về cấu trúc và kịch bản huấn luyện. |
+## Thứ tự đọc
+
+1. [`train_kansallisarkisto_hpa_3phase.py`](./train_kansallisarkisto_hpa_3phase.py)
+2. [`run_train_kansallisarkisto_hpa_cloud.sh`](./run_train_kansallisarkisto_hpa_cloud.sh)
+3. [`requirements.txt`](./requirements.txt)
+
+## Vai trò từng file
+
+### `train_kansallisarkisto_hpa_3phase.py`
+
+Python script chính điều khiển quy trình huấn luyện 3 phase. Script đọc nhãn từ tập dữ liệu, tự động bổ sung ký tự đặc thù tiếng Ukraine, áp dụng `TypedEvalCheckpointCallback` và lưu mô hình thành phẩm kèm báo cáo metrics CER/WER cuối cùng.
+
+Đầu ra chính:
+```text
+OUTPUT_DIR/
+├── splits/                           # Lưu các split cố định (train_fixed_hpa.jsonl, val_fixed_hpa.jsonl)
+├── final_cyrillic_htr_model/         # Mô hình thành phẩm xuất cuối cùng
+├── final_typed_val_predictions.jsonl # Kết quả suy luận dòng trên tập validation
+└── final_typed_val_metrics.json      # Báo cáo metrics tổng hợp và phân loại theo nhãn vùng
+```
+
+### `run_train_kansallisarkisto_hpa_cloud.sh`
+
+Script Bash Wrapper giúp nạp tự động các biến môi trường từ tệp `.env.hpa`, kiểm tra token xác thực HuggingFace và khởi chạy tiến trình huấn luyện Python trên máy chủ GPU.
+
+### `requirements.txt`
+
+Khai báo các thư viện Python phụ thuộc cần thiết (`torch`, `transformers`, `jiwer`, `accelerate`, ...).
 
 ---
 
@@ -27,7 +61,7 @@ Dữ liệu OCR được phân tách ở cấp độ trang quét (Page-level) tr
 
 Trước khi đưa vào mô hình TrOCR, các trang ảnh quét trong tệp `jsonl` cấp trang được trích xuất (crop) theo bounding box (`bbox`) của từng vùng dòng chữ (`handwritten`, `printed`, `annotation`) để tạo thành cấu trúc dữ liệu dòng:
 
-```
+```text
 DATA_ROOT/
 ├── train/
 │   ├── metadata.jsonl
@@ -61,7 +95,7 @@ Mô hình được huấn luyện đồng thời trên 3 loại vùng dòng ch�
 
 ---
 
-## Cấu hình Generation cho từng loại vùng (Typed Decoding)
+## Cấu hình Generation Cho Từng Loại Văn Bản (Typed Decoding)
 
 Để tối ưu thời gian suy luận và độ chính xác cho từng dạng vùng chọn, mô hình áp dụng chiến lược decode riêng biệt:
 
@@ -78,8 +112,6 @@ Mô hình được huấn luyện đồng thời trên 3 loại vùng dòng ch�
 ```bash
 pip install -r requirements.txt
 ```
-
----
 
 ### Bước 2: Chuẩn bị File Môi Trường (`.env.hpa`)
 
@@ -101,8 +133,6 @@ START_PHASE=1
 PYTHON_BIN=python3
 EOF
 ```
-
----
 
 ### Bước 3: Khởi chạy huấn luyện
 
@@ -135,7 +165,7 @@ python train_kansallisarkisto_hpa_3phase.py
 
 ---
 
-## Các Biến Môi Trường Hỗ Trợ
+## Các biến môi trường hỗ trợ
 
 | Biến Môi Trường | Mặc định | Mô tả |
 | --- | --- | --- |
@@ -145,3 +175,17 @@ python train_kansallisarkisto_hpa_3phase.py
 | `HPA_RESUME_MODEL_DIR` | `None` | Đường dẫn đến checkpoint cũ để tiếp tục huấn luyện (Resume). |
 | `HF_TOKEN` | `None` | Token xác thực HuggingFace. |
 | `PYTHON_BIN` | `python` | Đường dẫn tới trình thông dịch Python. |
+
+---
+
+## So sánh với Qwen3-VL OCR
+
+| Thành phần | TrOCR Line OCR | Qwen3-VL OCR |
+|---|---|---|
+| Kiến trúc mô hình | Encoder-Decoder chuyên biệt OCR (`VisionEncoderDecoderModel`) | Vision-Language Large Model (`Qwen3-VL-8B`) |
+| Đầu vào suy luận | Dòng chữ crop ngắn | Full-page / Crop đa phương thức |
+| Giải mã theo loại vùng | Typed Decoding (`num_beams` & `max_tokens` tùy biến) | Prompt-guided Multimodal Decoding |
+| Tối ưu hạ tầng | Tốc độ suy luận nhanh trên GPU vừa và nhỏ | Yêu cầu VRAM GPU lớn (Colab A100 / Kaggle P100/T4) |
+
+> [!NOTE]
+> TrOCR tập trung tối ưu năng lực nhận diện dòng chữ (Line OCR). Khi kết hợp với YOLO layout detector, nó đóng vai trò là OCR engine tốc độ cao và nhẹ hơn đáng kể so với VLM 8B.

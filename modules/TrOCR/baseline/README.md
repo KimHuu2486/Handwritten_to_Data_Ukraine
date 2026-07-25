@@ -1,59 +1,87 @@
-# TrOCR Zero-Shot Baseline
+# TrOCR Baseline
 
-Thư mục này chứa mã nguồn baseline zero-shot sử dụng kiến trúc **TrOCR** (Transformer-based Optical Character Recognition) để nhận diện văn bản (OCR) trên tập dữ liệu chữ viết tay tiếng Ukraine (**RUKOPYS dataset**).
+Pipeline này thực hiện suy luận zero-shot bằng mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) để nhận diện văn bản (OCR) trên tập dữ liệu chữ viết tay tiếng Ukraine (**RUKOPYS dataset**). Model nhận diện nội dung từ các crop vùng văn bản được cắt dựa trên bounding box (`bbox`).
 
-## Cấu trúc thư mục
+## Luồng chính
 
-| File / Thư mục | Mô tả |
-| --- | --- |
-| [`kaggle_zero_shot_baseline.ipynb`](./kaggle_zero_shot_baseline.ipynb) | Notebook chạy trên Kaggle thực hiện pipeline inference zero-shot, tính toán độ đo và xuất kết quả. |
-| [`dataset.md`](./dataset.md) | Chứa liên kết tham chiếu tới tập dữ liệu Kaggle ([RUKOPYS Dataset](https://www.kaggle.com/datasets/quii29/rukopys-dataset)). |
+```text
+RUKOPYS dataset (test.jsonl + images)
+              ↓
+Cắt crop theo bbox (handwritten, printed, annotation)
+              ↓
+Processor (microsoft/trocr-base-handwritten)
+              ↓
+TrOCR Model (Kansallisarkisto/cyrillic-htr-model)
+              ↓
+Tính độ đo CER / WER (jiwer) & Xuất submission.csv / report.json
+```
+
+## Thứ tự đọc
+
+1. [`kaggle_zero_shot_baseline.ipynb`](./kaggle_zero_shot_baseline.ipynb)
+2. [`dataset.md`](./dataset.md)
+
+## Vai trò từng file
+
+### `kaggle_zero_shot_baseline.ipynb`
+
+Notebook chạy trên Kaggle GPU nạp mô hình TrOCR pre-trained, tự động mở rộng tokenizer với các ký tự tiếng Ukraine đặc trưng, cắt các region crop theo bbox và chạy suy luận (inference) không qua huấn luyện lại (zero-shot).
+
+Đầu ra chính:
+```text
+/kaggle/working/
+├── report.json        # Báo cáo CER, WER, Exact Match chi tiết theo từng nhãn vùng
+└── submission.csv     # File kết quả dự đoán định dạng nộp bài
+```
+
+### `dataset.md`
+
+Tài liệu ghi chú liên kết tham chiếu tới tập dữ liệu RUKOPYS gốc trên Kaggle.
 
 ---
 
-## Mô hình & Processor
+## Chi tiết Pipeline suy luận
 
-- **Model Weight**: [`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model) (được tinh chỉnh cho chữ viết tay Cyrillic từ Kansallisarkisto).
-- **Processor**: [`microsoft/trocr-base-handwritten`](https://huggingface.co/microsoft/trocr-base-handwritten) (bộ xử lý ảnh và mã hóa văn bản gốc của Microsoft TrOCR).
-- **Mở rộng Vocab**: Do tiếng Ukraine có một số ký tự đặc trưng không thuộc bộ ký tự Cyrillic tiêu chuẩn, tokenizer được bổ sung các token:
-  ```python
-  ukrainian_tokens = ['Ґ', 'ґ', 'Є', 'є', 'І', 'і', 'Ї', 'ї', '’']
-  ```
-
----
-
-## Quy trình hoạt động (Pipeline Workflow)
-
-### 1. Cấu hình & Mở rộng Vocab
-Nạp mô hình `VisionEncoderDecoderModel` và `TrOCRProcessor`. Mở rộng tokenizer bằng các ký tự Ukraine đặc trưng và điều chỉnh kích thước `decoder_start_token_id` nếu cần.
+### 1. Cấu hình & Mở rộng Vocab Tokenizer
+Nạp mô hình `VisionEncoderDecoderModel` và `TrOCRProcessor`. Mở rộng `tokenizer` bổ sung các ký tự chữ cái đặc thù tiếng Ukraine:
+```python
+ukrainian_tokens = ['Ґ', 'ґ', 'Є', 'є', 'І', 'і', 'Ї', 'ї', '’']
+```
 
 ### 2. Crop ảnh theo Bounding Box
-Đọc siêu dữ liệu từ `test.jsonl`. Với mỗi dòng trong file:
-- Duyệt qua từng vùng (`region`) có loại văn bản thuộc nhóm `HPA_TYPES` = `{"handwritten", "printed", "annotation"}`.
-- Kiểm tra tọa độ `bbox` `[x1, y1, x2, y2]`, tiến hành crop vùng ảnh tương ứng từ ảnh gốc.
+Đọc siêu dữ liệu từ `test.jsonl`. Với mỗi trang ảnh:
+- Lọc các vùng chọn (`regions`) thuộc danh sách nhãn HPA: `handwritten`, `printed`, `annotation`.
+- Trích xuất ảnh crop theo tọa độ `bbox`: `[xmin, ymin, xmax, ymax]`.
 
-### 3. Suy luận (Inference)
-- Chuyển ảnh đã crop qua `processor` để lấy `pixel_values`.
-- Đưa qua `model.generate(pixel_values, max_length=128)` để nhận diện chuỗi ký tự.
-- Lưu chuỗi kết quả dự đoán và ground-truth vào danh sách tương ứng.
+### 3. Suy luận Zero-Shot (Inference)
+- Chuẩn hóa ảnh crop qua `processor` thành `pixel_values`.
+- Chạy `model.generate(pixel_values, max_length=128)` để nhận diện chuỗi văn bản.
 
-### 4. Đánh giá chỉ số (Metrics Evaluation)
-Sử dụng thư viện `jiwer` để tính toán các độ đo OCR cho từng nhóm (`handwritten`, `printed`, `annotation`) cũng như tổng thể (`overall`):
-- **CER (Character Error Rate)**: Tỉ lệ lỗi mức ký tự.
-- **WER (Word Error Rate)**: Tỉ lệ lỗi mức từ.
-- **Exact Match (EM)**: Tỉ lệ khớp hoàn toàn 100%.
-
-### 5. Xuất kết quả
-- **`report.json`**: Báo cáo tổng hợp các chỉ số CER, WER, Exact Match và tổng số mẫu theo từng phân loại.
-- **`submission.csv`**: File nộp bài định dạng CSV chuẩn gồm `image` và danh sách `regions` kèm văn bản nhận diện được.
+### 4. Đánh giá Chỉ số & Xuất kết quả
+- Sử dụng `jiwer` tính độ đo **CER** (Character Error Rate), **WER** (Word Error Rate), và **Exact Match (EM)**.
+- Ghi báo cáo chỉ số ra `report.json` và file nộp bài `submission.csv`.
 
 ---
 
-## Môi trường & Đầu ra (Outputs)
+## Hướng dẫn chạy notebook
+
+1. **Môi trường**: Khởi chạy trên **Kaggle Notebook** (kích hoạt GPU T4 hoặc P100).
+2. **Mount Dataset**: Đảm bảo dataset RUKOPYS đã được thêm vào Kaggle input (đường dẫn mặc định `/kaggle/input/rukopys-dataset`).
+3. **Thực thi**:
+   - Mở [`kaggle_zero_shot_baseline.ipynb`](./kaggle_zero_shot_baseline.ipynb).
+   - Chọn **Run All** để thực thi toàn bộ pipeline từ nạp model, crop ảnh, suy luận đến xuất báo cáo.
+4. **Kiểm tra kết quả**: Tải hai tệp thành phẩm `/kaggle/working/report.json` và `/kaggle/working/submission.csv` từ thư mục làm việc của Kaggle.
+
+---
+
+## Khác biệt với Fine-tuning
+
+| Đặc điểm | Zero-Shot Baseline | Fine-Tuned TrOCR |
+|---|---|---|
+| Trọng số mô hình | Trọng số gốc `Kansallisarkisto` | Trọng số đã tinh chỉnh trên RUKOPYS |
+| Huấn luyện lại | Không (Inference direct) | Có (Single-stage / 3-Phase Strategy) |
+| Tokenizer | Bổ sung token tiếng Ukraine runtime | Bổ sung token + Re-embed Decoder |
+| Điểm mạnh | Nhanh, không tốn tài nguyên train | Độ chính xác CER/WER cao hơn rõ rệt |
 
 > [!NOTE]
-> Notebook được thiết kế để khởi chạy trực tiếp trên môi trường **Kaggle Notebook** có kích hoạt GPU (CUDA).
-
-### Đường dẫn đầu ra trong Kaggle Working:
-- Báo cáo kết quả: `/kaggle/working/report.json`
-- File Submission: `/kaggle/working/submission.csv`
+> Notebook baseline này sử dụng bounding box có sẵn trong `test.jsonl` để đánh giá năng lực OCR đơn thuần của TrOCR zero-shot.

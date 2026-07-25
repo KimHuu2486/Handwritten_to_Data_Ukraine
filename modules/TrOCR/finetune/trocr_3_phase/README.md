@@ -1,17 +1,61 @@
-# TrOCR 3-Phase Fine-Tuning Pipeline
+# TrOCR 3-Phase Fine-Tuning
 
-Thư mục này chứa toàn bộ mã nguồn và kịch bản huấn luyện tinh chỉnh (Fine-tuning) mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) qua **3 giai đoạn (3-Phase Training)** cho bài toán nhận diện chữ viết tay tiếng Ukraine trên tập dữ liệu **Cropped RUKOPYS Dataset**.
+Pipeline này thực hiện huấn luyện tinh chỉnh mô hình **TrOCR** ([`Kansallisarkisto/cyrillic-htr-model`](https://huggingface.co/Kansallisarkisto/cyrillic-htr-model)) theo chiến lược **3 giai đoạn (3-Phase Training Strategy)** trên tập dữ liệu chữ viết tay tiếng Ukraine (**Cropped RUKOPYS Dataset**).
 
----
+## Luồng chính
 
-## Cấu trúc thư mục
+```text
+Silver region crops
+        ↓
+Phase 1 — Silver Warm-up (1.0 epoch, LR 3e-5)
+        ↓ Checkpoint Phase 1
+Gold region crops (Train split)
+        ↓
+Phase 2 — Gold Fine-tune (6.0 epochs, LR 1e-5)
+        ↓ Checkpoint Phase 2
+Gold region crops (Recovery)
+        ↓
+Phase 3 — Gold Recovery (2.0 epochs, LR 5e-6)
+        ↓
+Typed Decoding Evaluation (handwritten / printed / annotation)
+        ↓
+Final Model Artifacts (final_cyrillic_htr_model)
+```
 
-| File / Thư mục | Mô tả |
-| --- | --- |
-| [`train_kansallisarkisto_hpa_3_phase.py`](./train_kansallisarkisto_hpa_3_phase.py) | Python script chính thực hiện toàn bộ pipeline huấn luyện 3 phase, đánh giá phân loại (Typed Eval) và lưu checkpoint. |
-| [`run_train_kansallisarkisto_hpa_cloud.sh`](./run_train_kansallisarkisto_hpa_cloud.sh) | Script Bash dùng để load biến môi trường từ file `.env` và kích hoạt quá trình huấn luyện trên máy chủ/cloud. |
-| [`requirements.txt`](./requirements.txt) | Danh sách các thư viện Python cần thiết (`transformers`, `torch`, `jiwer`, `accelerate`, ...). |
-| [`dataset.md`](./dataset.md) | Liên kết tham chiếu tới tập dữ liệu đã crop trên Kaggle ([Cropped RUKOPYS Dataset](https://www.kaggle.com/datasets/quii29/cropped-rukopys-dataset)). |
+## Thứ tự đọc
+
+1. [`train_kansallisarkisto_hpa_3_phase.py`](./train_kansallisarkisto_hpa_3_phase.py)
+2. [`run_train_kansallisarkisto_hpa_cloud.sh`](./run_train_kansallisarkisto_hpa_cloud.sh)
+3. [`requirements.txt`](./requirements.txt)
+4. [`dataset.md`](./dataset.md)
+
+## Vai trò từng file
+
+### `train_kansallisarkisto_hpa_3_phase.py`
+
+Python script chính điều khiển toàn bộ pipeline 3 phase. Script tự động mở rộng tokenizer với các ký tự tiếng Ukraine đặc trưng, áp dụng custom evaluation callback (`TypedEvalCheckpointCallback`), lưu checkpoint tối ưu theo chỉ số CER và thực hiện Typed Generation cho kết quả cuối cùng.
+
+Đầu ra chính:
+```text
+OUTPUT_DIR/
+├── epoch_evaluations/                # Lưu dự đoán predictions.jsonl & metrics.json mỗi epoch
+├── best_model/                       # Checkpoint có chỉ số CER tốt nhất
+├── final_cyrillic_htr_model/         # Trọng số mô hình và processor thành phẩm sau 3 phase
+├── final_full_val_predictions.jsonl  # Dự đoán chi tiết trên 100% mẫu validation
+└── final_full_val_metrics.json       # Metrics tổng hợp và phân loại theo nhãn vùng
+```
+
+### `run_train_kansallisarkisto_hpa_cloud.sh`
+
+Script Bash Wrapper hỗ trợ tự động nạp các biến môi trường từ tệp cấu hình `.env.hpa`, kiểm tra token HuggingFace và kích hoạt script Python chạy trên máy chủ Cloud/GPU.
+
+### `requirements.txt`
+
+Khai báo các phụ thuộc thư viện Python (`transformers`, `torch`, `jiwer`, `accelerate`, ...).
+
+### `dataset.md`
+
+Tài liệu tham chiếu liên kết nguồn dữ liệu Cropped RUKOPYS Dataset trên Kaggle.
 
 ---
 
@@ -20,7 +64,7 @@ Thư mục này chứa toàn bộ mã nguồn và kịch bản huấn luyện ti
 Mô hình được huấn luyện đồng thời trên 3 loại vùng ảnh crop: `handwritten` (chữ viết tay), `printed` (chữ in), và `annotation` (ghi chú).
 
 1. **Phase 1: Silver Warm-up**
-   - **Tập dữ liệu**: Tập dữ liệu Silver (dữ liệu gắn nhãn tự động / giả lập).
+   - **Tập dữ liệu**: Tập dữ liệu Silver (gán nhãn tự động / giả lập).
    - **Cấu hình**: `1.0 epoch`, Learning Rate = `3e-5`.
    - **Mục tiêu**: Khởi động mô hình, làm quen với đặc trưng ảnh crop và định dạng văn bản tiếng Ukraine.
 2. **Phase 2: Gold Fine-tune**
@@ -37,24 +81,28 @@ Mô hình được huấn luyện đồng thời trên 3 loại vùng ảnh crop
 
 ---
 
+## Cấu hình Generation Cho Từng Loại Văn Bản (Typed Decoding)
+
+Để tối ưu thời gian suy luận và độ chính xác cho từng dạng vùng chọn, mô hình áp dụng chiến lược sinh chuỗi (decoding) riêng biệt:
+
+- **`handwritten`**: `num_beams=3`, `max_new_tokens=192` (cho phép sinh chuỗi dài).
+- **`printed`**: `num_beams=3`, `max_new_tokens=128`.
+- **`annotation`**: `num_beams=1` (greedy search), `max_new_tokens=16` (thích hợp cho các nhãn chú thích ngắn).
+
+---
+
 ## Hướng dẫn Chạy Huấn Luyện (Run Guide)
 
 ### Bước 1: Cài đặt thư viện phụ thuộc
-
-Trước tiên, hãy cài đặt các thư viện Python được khai báo trong [`requirements.txt`](./requirements.txt):
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
-
 ### Bước 2: Chuẩn bị dữ liệu và File Môi Trường (`.env`)
 
-Tạo một file `.env` (ví dụ `.env.hpa`) để khai báo đường dẫn dữ liệu và cấu hình chạy. 
-
 Dữ liệu đầu vào cần có cấu trúc thư mục như sau:
-```
+```text
 DATA_ROOT/
 ├── train/
 │   ├── metadata.jsonl
@@ -83,15 +131,11 @@ PYTHON_BIN=python3
 EOF
 ```
 
----
-
 ### Bước 3: Chạy Huấn Luyện
 
 Bạn có thể chạy huấn luyện theo một trong các cách sau:
 
 #### Cách 1: Chạy qua Script Bash với file `.env` (Khuyến nghị)
-
-Gán quyền thực thi cho file script bash và truyền đường dẫn file `ENV_FILE`:
 
 ```bash
 # Gán quyền thực thi cho script bash
@@ -102,8 +146,6 @@ ENV_FILE=.env.hpa ./run_train_kansallisarkisto_hpa_cloud.sh
 ```
 
 #### Cách 2: Chạy trực tiếp Script Bash với biến môi trường trên dòng lệnh (Inline)
-
-Nếu không tạo file `.env.hpa`, bạn có thể truyền trực tiếp biến môi trường khi gọi script:
 
 ```bash
 HPA_DATA_ROOT=/home/ubuntu/dataset \
@@ -122,8 +164,6 @@ python train_kansallisarkisto_hpa_3_phase.py
 
 ## Danh sách Biến Môi Trường Hỗ Trợ
 
-Bạn có thể tùy chỉnh kịch bản huấn luyện bằng cách thiết lập các biến môi trường sau:
-
 | Biến Môi Trường | Mặc định | Mô tả |
 | --- | --- | --- |
 | `HPA_DATA_ROOT` / `DATA_ROOT` | `../../dataset` | Đường dẫn gốc chứa thư mục `train/` và `silver/`. |
@@ -132,13 +172,3 @@ Bạn có thể tùy chỉnh kịch bản huấn luyện bằng cách thiết l�
 | `HPA_RESUME_MODEL_DIR` | `None` | Đường dẫn đến checkpoint cũ để tiếp tục huấn luyện (Resume). |
 | `HF_TOKEN` | `None` | Token xác thực HuggingFace để tải trọng số hoặc push model. |
 | `PYTHON_BIN` | `python` | Đường dẫn tới trình thông dịch Python cần dùng. |
-
----
-
-## Cấu Hình Generation Cho Từng Loại Văn Bản (Typed Decoding)
-
-Để tối ưu thời gian suy luận và độ chính xác cho từng dạng vùng chọn, mô hình áp dụng chiến lược sinh chuỗi (decoding) riêng biệt:
-
-- **`handwritten`**: `num_beams=3`, `max_new_tokens=192` (cho phép sinh chuỗi dài).
-- **`printed`**: `num_beams=3`, `max_new_tokens=128`.
-- **`annotation`**: `num_beams=1` (greedy search), `max_new_tokens=16` (thích hợp cho các nhãn chú thích ngắn).
