@@ -1,1 +1,1 @@
-**Này Nguyên Huy làm thì cập nhật vào nhé**
+<https://www.kaggle.com/datasets/quii29/cropped-rukopys-dataset>
