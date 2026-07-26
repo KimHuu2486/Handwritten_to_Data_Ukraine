@@ -1,0 +1,143 @@
+Kaggle notebooks for YOLO / DocLayout-YOLO module
+
+Main notebooks and direct download links:
+
+1. HTD - Box - YOLO/Faster R-CNN
+   Version: 2 of 3
+   Run id: 317742583
+   Runtime: 29m 30s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-yolo-faster-r-cnn
+   Download: https://www.kaggle.com/kernels/scriptcontent/317742583/download
+
+2. HTD - Box - DocLayout-YOLO
+   Version: 10 of 10
+   Run id: 318392323
+   Runtime: 3h 59m 2s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo
+   Download: https://www.kaggle.com/kernels/scriptcontent/318392323/download
+
+3. HTD - Box - DocLayout-YOLO-v2
+   Version: 3 of 3
+   Run id: 318629832
+   Runtime: 7h 30m 36s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v2
+   Download: https://www.kaggle.com/kernels/scriptcontent/318629832/download
+
+4. HTD - Box - Fine-tune DocLayout-YOLO-v2
+   Version: 2 of 2
+   Run id: 319578078
+   Runtime: 1h 58m 31s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-fine-tune-doclayout-yolo-v2
+   Download: https://www.kaggle.com/kernels/scriptcontent/319578078/download
+
+5. HTD - Box - DocLayout-YOLO-v4
+   Version: 6 of 6
+   Run id: 321844081
+   Runtime: 4h 2m 26s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v4
+   Download: https://www.kaggle.com/kernels/scriptcontent/321844081/download
+
+6. HTD - Box - DocLayout-YOLO-v4 - New Perspective
+   Version: 3 of 3
+   Run id: 324665982
+   Runtime: 8h 28m 9s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v4-new-perspective
+   Download: https://www.kaggle.com/kernels/scriptcontent/324665982/download
+
+7. HTD - Box - DocLayout-YOLO-v5 - 2
+   Version: 3 of 3
+   Run id: 323492630
+   Runtime: 3h 59m 45s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-2
+   Download: https://www.kaggle.com/kernels/scriptcontent/323492630/download
+
+8. HTD - Box - DocLayout-YOLO-v5 - 3
+   Version: 3 of 3
+   Run id: 323492603
+   Runtime: 1h 31m 41s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-3
+   Download: https://www.kaggle.com/kernels/scriptcontent/323492603/download
+
+9. HTD - Box - DocLayout-YOLO-v5.1 - 1
+   Version: 14 of 14
+   Run id: 323698558
+   Runtime: 3h 1m 47s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-1-1
+   Download: https://www.kaggle.com/kernels/scriptcontent/323698558/download
+
+10. HTD - Box - DocLayout-YOLO-v5.1 - 2
+    Version: 2 of 2
+    Run id: 323698704
+    Runtime: 1h 16m 43s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-1-2
+    Download: https://www.kaggle.com/kernels/scriptcontent/323698704/download
+
+11. HTD - Box - DocLayout-YOLO-v5.1 - 3
+    Version: 2 of 2
+    Run id: 323698833
+    Runtime: 2h 44m 45s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-1-3
+    Download: https://www.kaggle.com/kernels/scriptcontent/323698833/download
+
+12. HTD - Box - DocLayout-YOLO-v5.1 - 4
+    Version: 1 of 1
+    Run id: 323699013
+    Runtime: 1h 27m 53s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-1-4
+    Download: https://www.kaggle.com/kernels/scriptcontent/323699013/download
+
+13. HTD - Box - DocLayout-YOLO-v5.1 - 5
+    Version: 1 of 1
+    Run id: 323736109
+    Runtime: 1h 34m 20s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-doclayout-yolo-v5-1-5
+    Download: https://www.kaggle.com/kernels/scriptcontent/323736109/download
+
+14. HTD - BOX - Submit
+    Version: 9 of 9
+    Run id: 330926641
+    Runtime: 3m 17s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-submit
+    Download: https://www.kaggle.com/kernels/scriptcontent/330926641/download
+
+15. HTD - Box - Submit 3 FOLD
+    Version: 2 of 2
+    Run id: 323803417
+    Runtime: 6m 56s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-submit-3-fold
+    Download: https://www.kaggle.com/kernels/scriptcontent/323803417/download
+
+16. HTD - BBox - Merge dataset For DLFormer
+    Version: 5 of 5
+    Run id: 330930222
+    Runtime: 10m 34s
+    Page: https://www.kaggle.com/code/notpitomon/htd-bbox-merge-dataset-for-dlformer
+    Download: https://www.kaggle.com/kernels/scriptcontent/330930222/download
+
+17. HTD - Box - Better Gold
+    Version: 3 of 3
+    Run id: 320847976
+    Runtime: 4m 42s
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-better-gold
+    Download: https://www.kaggle.com/kernels/scriptcontent/320847976/download
+
+18. HTD - Final - Better Gold
+    Version: 1 of 1
+    Run id: 330599433
+    Runtime: 7m 3s
+    Page: https://www.kaggle.com/code/notpitomon/htd-final-better-gold
+    Download: https://www.kaggle.com/kernels/scriptcontent/330599433/download
+
+19. HTD - Box - Lam Dep Dataset
+    Version: 6 of 6
+    Run id: 318564377
+    Runtime: 12m 9s
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-lam-dep-dataset
+    Download: https://www.kaggle.com/kernels/scriptcontent/318564377/download
+
+20. HTD - Box - Test
+    Version: 1 of 1
+    Run id: 318575807
+    Runtime: 2m 12s, GPU T4 x2
+    Page: https://www.kaggle.com/code/notpitomon/htd-box-test
+    Download: https://www.kaggle.com/kernels/scriptcontent/318575807/download
