@@ -1,0 +1,6 @@
+- dataset: https://www.kaggle.com/datasets/quii29/rukopys-dataset
+- inference notebook: https://www.kaggle.com/datasets/huylhn1810/inference-notebook
+- refinetune metadata: https://www.kaggle.com/datasets/huylhn1810/htd-prefinetune-metadata
+- LoRA Weight: https://www.kaggle.com/datasets/huylhn1810/rukopys-qwen3vl-stage2b-finetune-dataset
+- TrOCR Weight: https://www.kaggle.com/datasets/habao2603/trocr-finetune-for-paper?fbclid=IwY2xjawSsKBhleHRuA2FlbQIxMABicmlkETFKSzVPUnFMOEVpR3FyQlR2c3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHikmoWlcRbtop8CmEpqM7R9JF5ONwFF6bdzTjzIC0bam3RoBbqBZuDig8T2C_aem_IJG882xbVDgm83P3s0a-ig\
+- YOLO Weight: https://www.kaggle.com/datasets/huylhn1810/yolo-weight-final
