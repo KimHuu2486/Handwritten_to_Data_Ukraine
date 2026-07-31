@@ -13,7 +13,7 @@ https://colab.research.google.com/drive/1yO2g938bHEvea0SS0rD8Vz_CqIK7_ZJD?usp=sh
 
 -- ukrainian_curriculum_clean --
 stage 0: https://www.kaggle.com/code/huylhn1810/ukrainian-glyph-script-warm-up
-stage 1: https://www.kaggle.com/code/huylhn1810/ukrainian-glyph-script-warm-up
+stage 1: https://www.kaggle.com/code/huylhn1810/clean-gt-region-ocr-fine-tune
 stage 2: https://www.kaggle.com/code/huylhn1810/final-prompt-format-fine-tune
 submit: https://www.kaggle.com/code/huylhn1810/rukopys-submission-yolo-qwen3-vl-ukrainian-curr
 
