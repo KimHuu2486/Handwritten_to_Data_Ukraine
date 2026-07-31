@@ -39,4 +39,4 @@ hybrid_submit: https://www.kaggle.com/code/trankimhuu/rukopys-yolo-qwen3-vl-hybr
 -- yolo_qwen_end_to_end_VLM_R^3_HALP --
 stage 1: https://www.kaggle.com/code/lhongthyan/rukopys-ocr-qwen3-vl-vlm-r3-halp
 stage 2: https://www.kaggle.com/code/nguynhongdiumy/rukopys-ocr-qwen3-vl-vlm-r3-halp-2
-submit: https://www.kaggle.com/code/nguynhongdiumy/rukopys-ocr-qwen3-vl-vlm-r3-halp-2
+submit: https://www.kaggle.com/code/nguynhongdiumy/rukopys-yolo-qwen3-vl-submit-vlm-r3-halp
