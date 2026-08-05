@@ -1,0 +1,42 @@
+- OOF -
+oof: https://colab.research.google.com/drive/1kmVNyZA4odJuR0HTH6ARm4kGOVYya7Uu?usp=sharing
+oof_predict m1,2,3: https://www.kaggle.com/code/nguynhongdiumy/htd-oof-m3-held-out-prediction
+submit: https://www.kaggle.com/code/lhongthyan/rukopys-csv-bbox-qwen3-vl-hybrid-submit-m3
+
+-- qwen_end_to_end --
+stage 1: https://www.kaggle.com/code/lhongthyan/htd-fine-tune
+stage 2: https://www.kaggle.com/code/lhongthyan/htd-fine-tune-v2
+submit: https://www.kaggle.com/code/lhongthyan/htd-submit
+
+-- qwen_formula_table --
+https://colab.research.google.com/drive/1yO2g938bHEvea0SS0rD8Vz_CqIK7_ZJD?usp=sharing
+
+-- ukrainian_curriculum_clean --
+stage 0: https://www.kaggle.com/code/huylhn1810/ukrainian-glyph-script-warm-up
+stage 1: https://www.kaggle.com/code/huylhn1810/clean-gt-region-ocr-fine-tune
+stage 2: https://www.kaggle.com/code/huylhn1810/final-prompt-format-fine-tune
+submit: https://www.kaggle.com/code/huylhn1810/rukopys-submission-yolo-qwen3-vl-ukrainian-curr
+
+-- yolo_ocr --
+stage 1: https://www.kaggle.com/code/huylhn1810/htd-qwen3vl-ocr-finetune
+stage 2: https://www.kaggle.com/code/huylhn1810/htd-qwen3vl-ocr-finetune-v2
+submit: https://www.kaggle.com/code/lhongthyan/htd-qwen3vl-ocr-submit
+
+- baseline -
+v1,2,3: https://www.kaggle.com/code/trankimhuu/zero-shot-baseline
+
+- yolo_qwen_end_to_end -
+lite-pipeline: https://www.kaggle.com/code/hieukimtran/lite-pipeline-yolo-qwen3vl
+full-pipeline: https://www.kaggle.com/code/trankimhuu/full-pipeline-yolo-qwen3vl
+stage 1: https://www.kaggle.com/code/huylhn1810/rukopys-qwen3-vl-stage-1-silver-warm-up-hp-v2
+stage 2: https://www.kaggle.com/code/huylhn1810/htd-refinetune-qwen-3vl-stage-2
+stage 2b finetune: https://www.kaggle.com/code/trankimhuu/rukopys-qwen3vl-stage2b-finetune-from-aug-dataset
+stage 2b build: chạy local
+stage 2c: https://www.kaggle.com/code/trankimhuu/rukopys-qwen3vl-stage2c-finetune-formula-table-aug
+rukopys_qwen3vl_submit: https://www.kaggle.com/code/trankimhuu/rukopys-qwen3vl-submit
+hybrid_submit: https://www.kaggle.com/code/trankimhuu/rukopys-yolo-qwen3-vl-hybrid-inference (version 5)
+
+-- yolo_qwen_end_to_end_VLM_R^3_HALP --
+stage 1: https://www.kaggle.com/code/lhongthyan/rukopys-ocr-qwen3-vl-vlm-r3-halp
+stage 2: https://www.kaggle.com/code/nguynhongdiumy/rukopys-ocr-qwen3-vl-vlm-r3-halp-2
+submit: https://www.kaggle.com/code/nguynhongdiumy/rukopys-yolo-qwen3-vl-submit-vlm-r3-halp

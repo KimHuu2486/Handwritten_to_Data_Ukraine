@@ -1,0 +1,29 @@
+-- evaluate --
+local
+
+-- full_system_results --
+00: https://www.kaggle.com/code/huylhn1810/full-system-00-yolo-bbox-only-empty-type-signal
+01: https://www.kaggle.com/code/huylhn1810/full-system-01-yolo-bbox-type-empty-text
+02: https://www.kaggle.com/code/lhongthyan/full-system-02-yolo-trocr-for-all-text-like-reg
+03: https://www.kaggle.com/code/lhongthyan/full-system-02-yolo-trocr-for-all-text-like-reg
+04: https://www.kaggle.com/code/hoangthinhxyz/full-system-04-yolo-trocr-hpa-empty-formula
+05: https://www.kaggle.com/code/hoangthinhxyz/full-system-05-yolo-qwen-formula-table-empty
+06: https://www.kaggle.com/code/nguynhongdiumy/full-system-06-yolo-trocr-qwen-hybrid-routing
+
+-- module_results --
+03: https://www.kaggle.com/code/nguynhongdiumy/module-results-03-qwen-final-prompt-on-gt-formula
+
+-- qwen_ablation --
+01: https://www.kaggle.com/code/huylhn1810/qwen-ablation-01-base-qwen-generic-prompt-on-gt-f
+02: https://www.kaggle.com/code/huylhn1810/qwen-ablation-02-lora-generic-prompt-on-gt-formul
+03: https://www.kaggle.com/code/lhongthyan/qwen-ablation-03-lora-type-specific-prompt-on-gt
+04: https://www.kaggle.com/code/lhongthyan/qwen-ablation-04-lora-source-aware-type-specific
+05: https://www.kaggle.com/code/hoangthinhxyz/qwen-ablation-05-lora-source-aware-generic-prompt
+06: https://www.kaggle.com/code/hoangthinhxyz/qwen-ablation-06-lora-final-prompt-on-gt-formula
+
+-- routing_ablation --
+01: https://www.kaggle.com/code/nguynhongdiumy/outing-ablation-01-yolo-trocr-for-all-text-like
+02: https://www.kaggle.com/code/trananhkhoa040206/routing-ablation-02-yolo-qwen-for-all-text-like
+03: https://www.kaggle.com/code/trananhkhoa040206/routing-ablation-03-yolo-trocr-hpa-empty-formu
+04: https://www.kaggle.com/code/tranduyminhdang/routing-ablation-04-yolo-qwen-formula-table-em
+05: https://www.kaggle.com/code/tranduyminhdang/routing-ablation-05-yolo-trocr-qwen-hybrid-ro
