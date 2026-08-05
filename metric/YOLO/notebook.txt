@@ -1,0 +1,31 @@
+Kaggle notebooks for YOLO / DocLayout-YOLO metrics
+
+Main notebooks and direct download links:
+
+1. HTD - BBox - Merge dataset For DLFormer
+   Version: 5 of 5
+   Run id: 330930222
+   Runtime: 10m 34s
+   Page: https://www.kaggle.com/code/notpitomon/htd-bbox-merge-dataset-for-dlformer
+   Download: https://www.kaggle.com/kernels/scriptcontent/330930222/download
+
+2. HTD - Final - Finetune YOLO Bbox
+   Version: 14 of 15
+   Run id: 331002236
+   Runtime: 2h 26m 7s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-final-finetune-yolo-bbox
+   Download: https://www.kaggle.com/kernels/scriptcontent/331002236/download
+
+3. HTD - Final - Finetune YOLO Bbox
+   Version: 13 of 15
+   Run id: 330934787
+   Runtime: 4h 18m 3s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-final-finetune-yolo-bbox
+   Download: https://www.kaggle.com/kernels/scriptcontent/330934787/download
+
+4. HTD - Final - Get Score Bbox V2
+   Version: 8 of 12
+   Run id: 331435576
+   Runtime: 3m 8s, GPU T4 x2
+   Page: https://www.kaggle.com/code/notpitomon/htd-final-get-score-bbox-v2
+   Download: https://www.kaggle.com/kernels/scriptcontent/331435576/download
